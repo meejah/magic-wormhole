@@ -1,36 +1,41 @@
 import argparse
+from twisted.python import usage
 from textwrap import dedent
 from . import public_relay
 from .. import __version__
 
-parser = argparse.ArgumentParser(
-    usage="wormhole SUBCOMMAND (subcommand-options)",
+class Base(usage.Options):
+    synopsis = "wormhole SUBCOMMAND (subcommand-options)"
     description=dedent("""
     Create a Magic Wormhole and communicate through it. Wormholes are created
     by speaking the same magic CODE in two different places at the same time.
     Wormholes are secure against anyone who doesn't use the same code."""),
     )
 
-parser.add_argument("--version", action="version",
-                    version="magic-wormhole "+ __version__)
+    optFlags = [
+    ("verify", "v", "display (and wait for acceptance of) verification string"),
+    ("hide-progress", None, "supress progress-bar display"),
+    ("no-listen", None, "(debug) don't open a listening socket for Transit"),
+    ("tor", None, "use Tor when connecting"),
+    ]
+    optParameters = [
+    ("relay-url", None, public_relay.RENDEZVOUS_RELAY,
+     #metavar="URL",
+     "rendezvous relay to use"), #, type=type(u""))
+    ("transit-helper", None, public_relay.TRANSIT_RELAY,
+     #metavar="tcp:HOST:PORT",
+     "transit relay to use"), # type=type(u""))
+    ("code-length", "c", default=2, #type=int, metavar="WORDS",
+     "length of code (in bytes/words)"),
+    ("dump-timing", None, default=None,
+     #type=type(u""), metavar="FILE", # TODO: hide from --help output
+     "(debug) write timing data to file"),
+    ]
+
+    def OFFopt_version(self):
+        print("magic-wormhole "+ __version__)
+
 g = parser.add_argument_group("wormhole configuration options")
-g.add_argument("--relay-url", default=public_relay.RENDEZVOUS_RELAY,
-               metavar="URL", help="rendezvous relay to use", type=type(u""))
-g.add_argument("--transit-helper", default=public_relay.TRANSIT_RELAY,
-               metavar="tcp:HOST:PORT", help="transit relay to use",
-               type=type(u""))
-g.add_argument("-c", "--code-length", type=int, default=2,
-               metavar="WORDS", help="length of code (in bytes/words)")
-g.add_argument("-v", "--verify", action="store_true",
-               help="display (and wait for acceptance of) verification string")
-g.add_argument("--hide-progress", action="store_true",
-               help="supress progress-bar display")
-g.add_argument("--dump-timing", type=type(u""), # TODO: hide from --help output
-               metavar="FILE", help="(debug) write timing data to file")
-g.add_argument("--no-listen", action="store_true",
-               help="(debug) don't open a listening socket for Transit")
-g.add_argument("--tor", action="store_true",
-               help="use Tor when connecting")
 parser.set_defaults(timing=None)
 subparsers = parser.add_subparsers(title="subcommands",
                                    dest="subcommand")
