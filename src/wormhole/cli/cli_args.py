@@ -122,3 +122,21 @@ p.add_argument("code", nargs="?", default=None, metavar="[CODE]",
                type=type(u""),
                )
 p.set_defaults(func="receive/receive")
+
+# CLI: ssh stuff
+ssh = subparsers.add_parser(
+    "ssh",
+    description="SSH management subcommand",
+    usage="wormhole ssh [add|send]",
+)
+
+p = ssh.add_argument(
+    "type",
+    nargs="?",
+    default=None,
+    metavar="[TYPE]",
+    help="Add a new SSH user",
+    type=type(u""),
+)
+ssh.set_defaults(func="ssh/add")
+

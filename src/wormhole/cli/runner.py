@@ -19,6 +19,10 @@ def dispatch(args): # returns Deferred
         with args.timing.add("import", which="cmd_receive"):
             from . import cmd_receive
         return cmd_receive.receive(args)
+    if args.func == "ssh/add":
+        with args.timing.add("import", which="cmd_ssh"):
+            from . import cmd_ssh
+        return cmd_ssh.add_ssh(args)
 
     raise ValueError("unknown args.func %s" % args.func)
 
