@@ -4,126 +4,116 @@ from textwrap import dedent
 from . import public_relay
 from .. import __version__
 
-class Base(usage.Options):
+# g = parser.add_argument_group("wormhole configuration options")
+# parser.set_defaults(timing=None)
+# subparsers = parser.add_subparsers(title="subcommands",
+#                                    dest="subcommand")
+
+
+class ServerShowUsageOptions(usage.Options):
+    optParameters = [
+        ("number", "n", 100, "show last N entries", int),
+    ]
+
+
+class ServerTailUsageOptions(usage.Options):
+    pass
+
+
+class ServerStartOptions(usage.Options):
+    pass
+
+
+class ServerStopOptions(usage.Options):
+    pass
+
+
+class ServerRestartOptions(usage.Options):
+    pass
+
+
+class ServerOptions(usage.Options):
+    optParameters = [
+        ("rendezvous", "r", "tcp:3000", "endpoint specification for the rendezvous port"),
+        ("transit", None, "tcp:3001", "endpoint specification for the transit-relay port"),
+        ("advertise-version", None, None, "version to recommend to clients"),
+        ("blur-usage", None, None, "round logged access times to improve privacy"),
+    ]
+
+    optFlags = [
+        ("no-daemon", "n", "Do not daemonize"),
+    ]
+
+    subCommands = [
+        ("start", None, ServerStartOptions, "Start a relay server"),
+        ("stop", None, ServerStopOptions, "Stop a running relay server"),
+        ("restart", None, ServerRestartOptions, "Restart a running relay server"),
+        ("show-usage", None, ServerShowUsageOptions, "Display usage data"),
+        ("tail-usage", None, ServerTailUsageOptions, "Follow latest usage"),
+    ]
+
+
+class SendOptions(usage.Options):
+    optParameters = [
+        ("text", 't', None, 'text message to send, instead of a file. Use "-" to read from stdin.', type(u"")),
+        ("code", None, None, "human-generated code phrase", type(u"")),
+    ]
+    optFlags = [
+        ("zero", "0", "enable no-code anything-goes mode"),
+    ]
+
+    # a single argument for what to send; can be None
+    def parseArgs(self, what=None):
+        self["what"] = what
+
+
+class ReceiveOptions(usage.Options):
+    optParameters = [
+        ("--output-file", "o", None,
+         "The file or directory to create, overriding the name suggested "
+         "by the sender."),
+    ]
+
+    optFlags = [
+        ("accept-file", None, "accept file transfer with asking for confirmation"),
+        ("zero", "0", "enable no-code anything-goes mode"),
+        ("only-text", "t", "refuse file transfers, only accept text transfers"),
+    ]
+
+    def parseArgs(self, code=None):
+        self['code'] = code
+
+    # FIXME this should go somewhere
+    "The magic-wormhole code, from the sender. If omitted, the program will ask for it, using tab-completion."
+
+
+class WormholeOptions(usage.Options):
     synopsis = "wormhole SUBCOMMAND (subcommand-options)"
     description=dedent("""
     Create a Magic Wormhole and communicate through it. Wormholes are created
     by speaking the same magic CODE in two different places at the same time.
-    Wormholes are secure against anyone who doesn't use the same code."""),
-    )
+    Wormholes are secure against anyone who doesn't use the same code.""")
 
     optFlags = [
-    ("verify", "v", "display (and wait for acceptance of) verification string"),
-    ("hide-progress", None, "supress progress-bar display"),
-    ("no-listen", None, "(debug) don't open a listening socket for Transit"),
-    ("tor", None, "use Tor when connecting"),
+        ("verify", "v", "display (and wait for acceptance of) verification string"),
+        ("hide-progress", None, "supress progress-bar display"),
+        ("no-listen", None, "(debug) don't open a listening socket for Transit"),
+        ("tor", None, "use Tor when connecting"),
     ]
     optParameters = [
-    ("relay-url", None, public_relay.RENDEZVOUS_RELAY,
-     #metavar="URL",
-     "rendezvous relay to use"), #, type=type(u""))
-    ("transit-helper", None, public_relay.TRANSIT_RELAY,
-     #metavar="tcp:HOST:PORT",
-     "transit relay to use"), # type=type(u""))
-    ("code-length", "c", default=2, #type=int, metavar="WORDS",
-     "length of code (in bytes/words)"),
-    ("dump-timing", None, default=None,
-     #type=type(u""), metavar="FILE", # TODO: hide from --help output
-     "(debug) write timing data to file"),
+        ("relay-url", None, public_relay.RENDEZVOUS_RELAY,
+         "rendezvous relay to use"),
+        ("transit-helper", None, public_relay.TRANSIT_RELAY,
+         "transit relay to use"),
+        ("code-length", "c", 2, "length of code (in bytes/words)"),
+        ("dump-timing", None, None, "(debug) write timing data to file"),
+    ]
+
+    subCommands = [
+        ("server", None, ServerOptions, "Commands for the wormwhole relay server"),
+        ("send", None, SendOptions, "Send text message, file, or directory"),
+        ("receive", None, ReceiveOptions, "Receive a text message, file, or directory"),
     ]
 
     def OFFopt_version(self):
         print("magic-wormhole "+ __version__)
-
-g = parser.add_argument_group("wormhole configuration options")
-parser.set_defaults(timing=None)
-subparsers = parser.add_subparsers(title="subcommands",
-                                   dest="subcommand")
-
-
-# CLI: run-server
-s = subparsers.add_parser("server", description="Start/stop a relay server")
-sp = s.add_subparsers(title="subcommands", dest="subcommand")
-sp_start = sp.add_parser("start", description="Start a relay server",
-                         usage="wormhole server start [opts] [TWISTD-ARGS..]")
-sp_start.add_argument("--rendezvous", default="tcp:3000", metavar="tcp:PORT",
-                      help="endpoint specification for the rendezvous port")
-sp_start.add_argument("--transit", default="tcp:3001", metavar="tcp:PORT",
-                      help="endpoint specification for the transit-relay port")
-sp_start.add_argument("--advertise-version", metavar="VERSION",
-                      help="version to recommend to clients")
-sp_start.add_argument("--blur-usage", default=None, type=int,
-                      metavar="SECONDS",
-                      help="round logged access times to improve privacy")
-sp_start.add_argument("-n", "--no-daemon", action="store_true")
-#sp_start.add_argument("twistd_args", nargs="*", default=None,
-#                      metavar="[TWISTD-ARGS..]",
-#                      help=dedent("""\
-#                      Additional arguments to pass to twistd"""),
-#                      )
-sp_start.set_defaults(func="server/start")
-
-sp_stop = sp.add_parser("stop", description="Stop the relay server",
-                        usage="wormhole server stop")
-sp_stop.set_defaults(func="server/stop")
-
-sp_restart = sp.add_parser("restart", description="Restart the relay server",
-                           usage="wormhole server restart")
-sp_restart.add_argument("--rendezvous", default="tcp:3000", metavar="tcp:PORT",
-                        help="endpoint specification for the rendezvous port")
-sp_restart.add_argument("--transit", default="tcp:3001", metavar="tcp:PORT",
-                        help="endpoint specification for the transit-relay port")
-sp_restart.add_argument("--advertise-version", metavar="VERSION",
-                        help="version to recommend to clients")
-sp_restart.add_argument("--blur-usage", default=None, type=int,
-                        metavar="SECONDS",
-                        help="round logged access times to improve privacy")
-sp_restart.add_argument("-n", "--no-daemon", action="store_true")
-sp_restart.set_defaults(func="server/restart")
-
-sp_show_usage = sp.add_parser("show-usage", description="Display usage data",
-                              usage="wormhole server show-usage")
-sp_show_usage.add_argument("-n", default=100, type=int,
-                           help="show last N entries")
-sp_show_usage.set_defaults(func="usage/usage")
-
-sp_tail_usage = sp.add_parser("tail-usage", description="Follow latest usage",
-                              usage="wormhole server tail-usage")
-sp_tail_usage.set_defaults(func="usage/tail")
-
-# CLI: send
-p = subparsers.add_parser("send",
-                          description="Send text message, file, or directory",
-                          usage="wormhole send [FILENAME|DIRNAME]")
-p.add_argument("--text", metavar="MESSAGE",
-               help="text message to send, instead of a file. Use '-' to read from stdin.")
-p.add_argument("--code", metavar="CODE", help="human-generated code phrase",
-               type=type(u""))
-p.add_argument("-0", dest="zeromode", action="store_true",
-               help="enable no-code anything-goes mode")
-p.add_argument("what", nargs="?", default=None, metavar="[FILENAME|DIRNAME]",
-               help="the file/directory to send")
-p.set_defaults(func="send/send")
-
-# CLI: receive
-p = subparsers.add_parser("receive",
-                          description="Receive a text message, file, or directory",
-                          usage="wormhole receive [CODE]")
-p.add_argument("-0", dest="zeromode", action="store_true",
-               help="enable no-code anything-goes mode")
-p.add_argument("-t", "--only-text", dest="only_text", action="store_true",
-               help="refuse file transfers, only accept text transfers")
-p.add_argument("--accept-file", dest="accept_file", action="store_true",
-               help="accept file transfer with asking for confirmation")
-p.add_argument("-o", "--output-file", default=None, metavar="FILENAME|DIRNAME",
-               help=dedent("""\
-               The file or directory to create, overriding the name suggested
-               by the sender."""),
-               )
-p.add_argument("code", nargs="?", default=None, metavar="[CODE]",
-               help=dedent("""\
-               The magic-wormhole code, from the sender. If omitted, the
-               program will ask for it, using tab-completion."""),
-               type=type(u""),
-               )
-p.set_defaults(func="receive/receive")

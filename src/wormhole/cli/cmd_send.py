@@ -28,14 +28,14 @@ class Sender:
         self._args = args
         self._reactor = reactor
         self._tor_manager = None
-        self._timing = args.timing
+        self._timing = args['timing']
         self._fd_to_send = None
         self._transit_sender = None
 
     @inlineCallbacks
     def go(self):
-        assert isinstance(self._args.relay_url, type(u""))
-        if self._args.tor:
+        assert isinstance(self._args['relay-url'], type(u""))
+        if self._args['tor']:
             with self._timing.add("import", which="tor_manager"):
                 from ..tor_manager import TorManager
             self._tor_manager = TorManager(reactor, timing=self._timing)
@@ -45,7 +45,7 @@ class Sender:
             # with the user handing off the wormhole code
             yield self._tor_manager.start()
 
-        w = wormhole(APPID, self._args.relay_url,
+        w = wormhole(APPID, self._args['relay-url'],
                      self._reactor, self._tor_manager,
                      timing=self._timing)
         d = self._go(w)
@@ -64,29 +64,29 @@ class Sender:
         args = self._args
 
         other_cmd = "wormhole receive"
-        if args.verify:
+        if args['verify']:
             other_cmd = "wormhole --verify receive"
-        if args.zeromode:
-            assert not args.code
-            args.code = u"0-"
+        if args.subOptions['zero']:
+            assert not args['code']
+            args['code'] = u"0-"
             other_cmd += " -0"
 
         print(u"On the other computer, please run: %s" % other_cmd,
-              file=args.stdout)
+              file=args['stdout'])
 
-        if args.code:
-            w.set_code(args.code)
-            code = args.code
+        if args.subOptions['code']:
+            w.set_code(args['code'])
+            code = args['code']
         else:
-            code = yield w.get_code(args.code_length)
+            code = yield w.get_code(args['code-length'])
 
-        if not args.zeromode:
-            print(u"Wormhole code is: %s" % code, file=args.stdout)
-        print(u"", file=args.stdout)
+        if not args.subOptions['zero']:
+            print(u"Wormhole code is: %s" % code, file=args['stdout'])
+        print(u"", file=args['stdout'])
 
         # TODO: don't stall on w.verify() unless they want it
         verifier_bytes = yield w.verify() # this may raise WrongPasswordError
-        if args.verify:
+        if args['verify']:
             verifier = bytes_to_hexstr(verifier_bytes)
             while True:
                 ok = six.moves.input("Verifier %s. ok? (yes/no): " % verifier)
@@ -99,8 +99,8 @@ class Sender:
                     raise TransferError(err)
 
         if self._fd_to_send:
-            ts = TransitSender(args.transit_helper,
-                               no_listen=args.no_listen,
+            ts = TransitSender(args['transit_helper'],
+                               no_listen=args['no_listen'],
                                tor_manager=self._tor_manager,
                                reactor=self._reactor,
                                timing=self._timing)
@@ -159,25 +159,26 @@ class Sender:
         offer = {}
 
         args = self._args
-        text = args.text
+        sendargs = self._args.subOptions
+        text = sendargs['text']
         if text == "-":
-            print(u"Reading text message from stdin..", file=args.stdout)
+            print(u"Reading text message from stdin..", file=args['stdout'])
             text = sys.stdin.read()
-        if not text and not args.what:
+        if not text and not args['what']:
             text = six.moves.input("Text to send: ")
 
         if text is not None:
             print(u"Sending text message (%d bytes)" % len(text),
-                  file=args.stdout)
+                  file=args['stdout'])
             offer = { "message": text }
             fd_to_send = None
             return offer, fd_to_send
 
-        what = os.path.join(args.cwd, args.what)
+        what = os.path.join(args['cwd'], args['what'])
         what = what.rstrip(os.sep)
         if not os.path.exists(what):
             raise TransferError("Cannot send: no file/directory named '%s'" %
-                                args.what)
+                                args['what'])
         basename = os.path.basename(what)
 
         if os.path.isfile(what):
@@ -188,12 +189,12 @@ class Sender:
                 "filesize": filesize,
                 }
             print(u"Sending %d byte file named '%s'" % (filesize, basename),
-                  file=args.stdout)
+                  file=args['stdout'])
             fd_to_send = open(what, "rb")
             return offer, fd_to_send
 
         if os.path.isdir(what):
-            print(u"Building zipfile..", file=args.stdout)
+            print(u"Building zipfile..", file=args['stdout'])
             # We're sending a directory. Create a zipfile in a tempdir and
             # send that.
             fd_to_send = tempfile.SpooledTemporaryFile()
@@ -203,7 +204,7 @@ class Sender:
             tostrip = len(what.split(os.sep))
             with zipfile.ZipFile(fd_to_send, "w", zipfile.ZIP_DEFLATED) as zf:
                 for path,dirs,files in os.walk(what):
-                    # path always starts with args.what, then sometimes might
+                    # path always starts with args['what'], then sometimes might
                     # have "/subdir" appended. We want the zipfile to contain
                     # "" or "subdir"
                     localpath = list(path.split(os.sep)[tostrip:])
@@ -224,16 +225,16 @@ class Sender:
                 "numfiles": num_files,
                 }
             print(u"Sending directory (%d bytes compressed) named '%s'"
-                  % (filesize, basename), file=args.stdout)
+                  % (filesize, basename), file=args['stdout'])
             return offer, fd_to_send
 
-        raise TypeError("'%s' is neither file nor directory" % args.what)
+        raise TypeError("'%s' is neither file nor directory" % args['what'])
 
     @inlineCallbacks
     def _handle_answer(self, them_answer):
         if self._fd_to_send is None:
             if them_answer["message_ack"] == "ok":
-                print(u"text message sent", file=self._args.stdout)
+                print(u"text message sent", file=self._args['stdout'])
                 returnValue(None) # terminates this function
             raise TransferError("error sending text: %r" % (them_answer,))
 
@@ -255,11 +256,11 @@ class Sender:
         record_pipe = yield ts.connect()
         self._timing.add("transit connected")
         # record_pipe should implement IConsumer, chunks are just records
-        stdout = self._args.stdout
+        stdout = self._args['stdout']
         print(u"Sending (%s).." % record_pipe.describe(), file=stdout)
 
         hasher = hashlib.sha256()
-        progress = tqdm(file=stdout, disable=self._args.hide_progress,
+        progress = tqdm(file=stdout, disable=self._args['hide-progress'],
                         unit="B", unit_scale=True,
                         total=filesize)
         def _count_and_hash(data):

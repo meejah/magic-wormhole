@@ -28,30 +28,30 @@ def receive(args, reactor=reactor):
 
 class TwistedReceiver:
     def __init__(self, args, reactor=reactor):
-        assert isinstance(args.relay_url, type(u""))
+        assert isinstance(args['relay-url'], type(u""))
         self.args = args
         self._reactor = reactor
         self._tor_manager = None
         self._transit_receiver = None
 
     def _msg(self, *args, **kwargs):
-        print(*args, file=self.args.stdout, **kwargs)
+        print(*args, file=self.args['stdout'], **kwargs)
 
     @inlineCallbacks
     def go(self):
-        if self.args.tor:
-            with self.args.timing.add("import", which="tor_manager"):
+        if self.args['tor']:
+            with self.args['timing'].add("import", which="tor_manager"):
                 from ..tor_manager import TorManager
             self._tor_manager = TorManager(self._reactor,
-                                           timing=self.args.timing)
+                                           timing=self.args['timing'])
             # For now, block everything until Tor has started. Soon: launch
             # tor in parallel with everything else, make sure the TorManager
             # can lazy-provide an endpoint, and overlap the startup process
             # with the user handing off the wormhole code
             yield self._tor_manager.start()
 
-        w = wormhole(APPID, self.args.relay_url, self._reactor,
-                     self._tor_manager, timing=self.args.timing)
+        w = wormhole(APPID, self.args['relay-url'], self._reactor,
+                     self._tor_manager, timing=self.args['timing'])
         # I wanted to do this instead:
         #
         #    try:
@@ -115,19 +115,19 @@ class TwistedReceiver:
 
     @inlineCallbacks
     def _handle_code(self, w):
-        code = self.args.code
-        if self.args.zeromode:
+        code = self.args.subOptions['code']
+        if self.args.subOptions['zero']:
             assert not code
             code = u"0-"
         if code:
             w.set_code(code)
         else:
             yield w.input_code("Enter receive wormhole code: ",
-                               self.args.code_length)
+                               self.args['code-length'])
 
     def _show_verifier(self, verifier):
         verifier_hex = bytes_to_hexstr(verifier)
-        if self.args.verify:
+        if self.args['verify']:
             self._msg(u"Verifier %s." % verifier_hex)
 
     @inlineCallbacks
@@ -140,11 +140,11 @@ class TwistedReceiver:
 
     @inlineCallbacks
     def _build_transit(self, w, sender_transit):
-        tr = TransitReceiver(self.args.transit_helper,
-                             no_listen=self.args.no_listen,
+        tr = TransitReceiver(self.args['transit_helper'],
+                             no_listen=self.args['no_listen'],
                              tor_manager=self._tor_manager,
                              reactor=self._reactor,
-                             timing=self.args.timing)
+                             timing=self.args['timing'])
         self._transit_receiver = tr
         transit_key = w.derive_key(APPID+u"/transit-key", tr.TRANSIT_KEY_LENGTH)
         tr.set_transit_key(transit_key)
@@ -221,9 +221,9 @@ class TwistedReceiver:
         # the basename() is intended to protect us against
         # "~/.ssh/authorized_keys" and other attacks
         destname = os.path.basename(destname)
-        if self.args.output_file:
-            destname = self.args.output_file # override
-        abs_destname = os.path.join(self.args.cwd, destname)
+        if self.args['output_file']:
+            destname = self.args['output_file'] # override
+        abs_destname = os.path.join(self.args['cwd'], destname)
 
         # get confirmation from the user before writing to the local directory
         if os.path.exists(abs_destname):
@@ -233,8 +233,8 @@ class TwistedReceiver:
         return abs_destname
 
     def _ask_permission(self):
-        with self.args.timing.add("permission", waiting="user") as t:
-            while True and not self.args.accept_file:
+        with self.args['timing'].add("permission", waiting="user") as t:
+            while True and not self.args['accept-file']:
                 ok = six.moves.input("ok? (y/n): ")
                 if ok.lower().startswith("y"):
                     break
@@ -249,7 +249,7 @@ class TwistedReceiver:
     @inlineCallbacks
     def _establish_transit(self):
         record_pipe = yield self._transit_receiver.connect()
-        self.args.timing.add("transit connected")
+        self.args['timing'].add("transit connected")
         returnValue(record_pipe)
 
     @inlineCallbacks
@@ -257,9 +257,9 @@ class TwistedReceiver:
         # now receive the rest of the owl
         self._msg(u"Receiving (%s).." % record_pipe.describe())
 
-        with self.args.timing.add("rx file"):
-            progress = tqdm(file=self.args.stdout,
-                            disable=self.args.hide_progress,
+        with self.args['timing'].add("rx file"):
+            progress = tqdm(file=self.args['stdout'],
+                            disable=self.args['hide_progress'],
                             unit="B", unit_scale=True, total=self.xfersize)
             hasher = hashlib.sha256()
             with progress:
@@ -286,7 +286,7 @@ class TwistedReceiver:
 
     def _write_directory(self, f):
         self._msg(u"Unpacking zipfile..")
-        with self.args.timing.add("unpack zip"):
+        with self.args['timing'].add("unpack zip"):
             with zipfile.ZipFile(f, "r", zipfile.ZIP_DEFLATED) as zf:
                 zf.extractall(path=self.abs_destname)
                 # extractall() appears to offer some protection against
@@ -302,6 +302,6 @@ class TwistedReceiver:
         datahash_hex = bytes_to_hexstr(datahash)
         ack = {u"ack": u"ok", u"sha256": datahash_hex}
         ack_bytes = dict_to_bytes(ack)
-        with self.args.timing.add("send ack"):
+        with self.args['timing'].add("send ack"):
             yield record_pipe.send_record(ack_bytes)
             yield record_pipe.close()
