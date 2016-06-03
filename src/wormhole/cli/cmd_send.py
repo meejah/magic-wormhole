@@ -67,18 +67,18 @@ class Sender:
         if args['verify']:
             other_cmd = "wormhole --verify receive"
         if args.subOptions['zero']:
-            assert not args['code']
-            args['code'] = u"0-"
+            assert not args.subOptions['code']
+            args.subOptions['code'] = u"0-"
             other_cmd += " -0"
 
         print(u"On the other computer, please run: %s" % other_cmd,
               file=args['stdout'])
 
         if args.subOptions['code']:
-            w.set_code(args['code'])
-            code = args['code']
+            w.set_code(args.subOptions['code'])
+            code = args.subOptions['code']
         else:
-            code = yield w.get_code(args['code-length'])
+            code = yield w.get_code(args.subOptions['code-length'])
 
         if not args.subOptions['zero']:
             print(u"Wormhole code is: %s" % code, file=args['stdout'])
@@ -99,8 +99,8 @@ class Sender:
                     raise TransferError(err)
 
         if self._fd_to_send:
-            ts = TransitSender(args['transit_helper'],
-                               no_listen=args['no_listen'],
+            ts = TransitSender(args['transit-helper'],
+                               no_listen=args['no-listen'],
                                tor_manager=self._tor_manager,
                                reactor=self._reactor,
                                timing=self._timing)
@@ -164,7 +164,7 @@ class Sender:
         if text == "-":
             print(u"Reading text message from stdin..", file=args['stdout'])
             text = sys.stdin.read()
-        if not text and not args['what']:
+        if not text and not args.subOptions['what']:
             text = six.moves.input("Text to send: ")
 
         if text is not None:
@@ -174,11 +174,11 @@ class Sender:
             fd_to_send = None
             return offer, fd_to_send
 
-        what = os.path.join(args['cwd'], args['what'])
+        what = os.path.join(args['cwd'], args.subOptions['what'])
         what = what.rstrip(os.sep)
         if not os.path.exists(what):
             raise TransferError("Cannot send: no file/directory named '%s'" %
-                                args['what'])
+                                args.subOptions['what'])
         basename = os.path.basename(what)
 
         if os.path.isfile(what):
@@ -228,7 +228,7 @@ class Sender:
                   % (filesize, basename), file=args['stdout'])
             return offer, fd_to_send
 
-        raise TypeError("'%s' is neither file nor directory" % args['what'])
+        raise TypeError("'%s' is neither file nor directory" % args.subOptions['what'])
 
     @inlineCallbacks
     def _handle_answer(self, them_answer):

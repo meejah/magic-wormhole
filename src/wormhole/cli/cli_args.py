@@ -1,4 +1,3 @@
-import argparse
 from twisted.python import usage
 from textwrap import dedent
 from . import public_relay
@@ -69,7 +68,7 @@ class SendOptions(usage.Options):
 
 class ReceiveOptions(usage.Options):
     optParameters = [
-        ("--output-file", "o", None,
+        ("output-file", "o", None,
          "The file or directory to create, overriding the name suggested "
          "by the sender."),
     ]
@@ -101,10 +100,8 @@ class WormholeOptions(usage.Options):
         ("tor", None, "use Tor when connecting"),
     ]
     optParameters = [
-        ("relay-url", None, public_relay.RENDEZVOUS_RELAY,
-         "rendezvous relay to use"),
-        ("transit-helper", None, public_relay.TRANSIT_RELAY,
-         "transit relay to use"),
+        ("relay-url", None, public_relay.RENDEZVOUS_RELAY, "rendezvous relay to use", type(u"")),
+        ("transit-helper", None, public_relay.TRANSIT_RELAY, "transit relay to use"),
         ("code-length", "c", 2, "length of code (in bytes/words)"),
         ("dump-timing", None, None, "(debug) write timing data to file"),
     ]

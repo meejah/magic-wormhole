@@ -27,10 +27,12 @@ class OfferData(unittest.TestCase):
         message = "blah blah blah ponies"
 
         send_args = [ "send", "--text", message ]
-        args = runner.parser.parse_args(send_args)
-        args.cwd = os.getcwd()
-        args.stdout = io.StringIO()
-        args.stderr = io.StringIO()
+        args = runner.WormholeOptions()
+        args.parseOptions(send_args)
+        args['cwd'] = os.getcwd()
+        args['stdout'] = io.StringIO()
+        args['stderr'] = io.StringIO()
+        args['timing'] = DebugTiming()
 
         d, fd_to_send = build_offer(args)
 
@@ -50,10 +52,12 @@ class OfferData(unittest.TestCase):
             f.write(message)
 
         send_args = [ "send", filename ]
-        args = runner.parser.parse_args(send_args)
-        args.cwd = send_dir
-        args.stdout = io.StringIO()
-        args.stderr = io.StringIO()
+        args = runner.WormholeOptions()
+        args.parseOptions(send_args)
+        args['cwd'] = send_dir
+        args['stdout'] = io.StringIO()
+        args['stderr'] = io.StringIO()
+        args['timing'] = DebugTiming()
 
         d, fd_to_send = build_offer(args)
 
@@ -71,10 +75,12 @@ class OfferData(unittest.TestCase):
         os.mkdir(send_dir)
 
         send_args = [ "send", filename ]
-        args = runner.parser.parse_args(send_args)
-        args.cwd = send_dir
-        args.stdout = io.StringIO()
-        args.stderr = io.StringIO()
+        args = runner.WormholeOptions()
+        args.parseOptions(send_args)
+        args['cwd'] = send_dir
+        args['stdout'] = io.StringIO()
+        args['stderr'] = io.StringIO()
+        args['timing'] = DebugTiming()
 
         e = self.assertRaises(TransferError, build_offer, args)
         self.assertEqual(str(e),
@@ -94,10 +100,12 @@ class OfferData(unittest.TestCase):
         if addslash:
             send_dir_arg += os.sep
         send_args = [ "send", send_dir_arg ]
-        args = runner.parser.parse_args(send_args)
-        args.cwd = parent_dir
-        args.stdout = io.StringIO()
-        args.stderr = io.StringIO()
+        args = runner.WormholeOptions()
+        args.parseOptions(send_args)
+        args['cwd'] = parent_dir
+        args['stdout'] = io.StringIO()
+        args['stderr'] = io.StringIO()
+        args['timing'] = DebugTiming()
 
         d, fd_to_send = build_offer(args)
 
@@ -149,10 +157,12 @@ class OfferData(unittest.TestCase):
         self.assertFalse(os.path.isdir(abs_filename))
 
         send_args = [ "send", filename ]
-        args = runner.parser.parse_args(send_args)
-        args.cwd = send_dir
-        args.stdout = io.StringIO()
-        args.stderr = io.StringIO()
+        args = runner.WormholeOptions()
+        args.parseOptions(send_args)
+        args['cwd'] = send_dir
+        args['stdout'] = io.StringIO()
+        args['stderr'] = io.StringIO()
+        args['timing'] = DebugTiming()
 
         e = self.assertRaises(TypeError, build_offer, args)
         self.assertEqual(str(e),
@@ -321,16 +331,18 @@ class PregeneratedCode(ServerBase, ScriptsBase, unittest.TestCase):
             self.assertEqual((send_rc, receive_rc), (0, 0),
                              (send_res, receive_res))
         else:
-            sargs = runner.parser.parse_args(send_args)
-            sargs.cwd = send_dir
-            sargs.stdout = io.StringIO()
-            sargs.stderr = io.StringIO()
-            sargs.timing = DebugTiming()
-            rargs = runner.parser.parse_args(receive_args)
-            rargs.cwd = receive_dir
-            rargs.stdout = io.StringIO()
-            rargs.stderr = io.StringIO()
-            rargs.timing = DebugTiming()
+            sargs = runner.WormholeOptions()
+            args.parseOptions(sargs)
+            sargs['cwd'] = send_dir
+            sargs['stdout'] = io.StringIO()
+            sargs['stderr'] = io.StringIO()
+            sargs['timing'] = DebugTiming()
+            rargs = runner.WormholeOptions()
+            rargs.parseOptions(receive_args)
+            rargs['cwd'] = receive_dir
+            rargs['stdout'] = io.StringIO()
+            rargs['stderr'] = io.StringIO()
+            rargs['timing'] = DebugTiming()
             send_d = cmd_send.send(sargs)
             receive_d = cmd_receive.receive(rargs)
 
@@ -338,10 +350,10 @@ class PregeneratedCode(ServerBase, ScriptsBase, unittest.TestCase):
             # versa. Make sure we don't wait on one side exclusively
 
             yield gatherResults([send_d, receive_d], True)
-            send_stdout = sargs.stdout.getvalue()
-            send_stderr = sargs.stderr.getvalue()
-            receive_stdout = rargs.stdout.getvalue()
-            receive_stderr = rargs.stderr.getvalue()
+            send_stdout = sargs['stdout'].getvalue()
+            send_stderr = sargs['stderr'].getvalue()
+            receive_stdout = rargs['stdout'].getvalue()
+            receive_stderr = rargs['stderr'].getvalue()
 
             # all output here comes from a StringIO, which uses \n for
             # newlines, even if we're on windows
@@ -457,31 +469,34 @@ class PregeneratedCode(ServerBase, ScriptsBase, unittest.TestCase):
         with open(clobberable, "w") as f:
             f.write(PRESERVE)
 
-        sargs = runner.parser.parse_args(send_args)
-        sargs.cwd = send_dir
-        sargs.stdout = io.StringIO()
-        sargs.stderr = io.StringIO()
-        sargs.timing = DebugTiming()
-        rargs = runner.parser.parse_args(receive_args)
-        rargs.cwd = receive_dir
-        rargs.stdout = io.StringIO()
-        rargs.stderr = io.StringIO()
-        rargs.timing = DebugTiming()
+        sargs = runner.WormholeOptions()
+        sargs.parseOptions(send_args)
+        sargs['cwd'] = send_dir
+        sargs['stdout'] = io.StringIO()
+        sargs['stderr'] = io.StringIO()
+        sargs['timing'] = DebugTiming()
+
+        rargs = runner.WormholeOptions()
+        rargs.parseOptions(receive_args)
+        rargs['cwd'] = receive_dir
+        rargs['stdout'] = io.StringIO()
+        rargs['stderr'] = io.StringIO()
+        rargs['timing'] = DebugTiming()
         send_d = cmd_send.send(sargs)
         receive_d = cmd_receive.receive(rargs)
 
         # both sides will fail because of the pre-existing file
 
-        f = yield self.assertFailure(send_d, TransferError)
-        self.assertEqual(str(f), "remote error, transfer abandoned: file already exists")
-
         f = yield self.assertFailure(receive_d, TransferError)
         self.assertEqual(str(f), "file already exists")
 
-        send_stdout = sargs.stdout.getvalue()
-        send_stderr = sargs.stderr.getvalue()
-        receive_stdout = rargs.stdout.getvalue()
-        receive_stderr = rargs.stderr.getvalue()
+        f = yield self.assertFailure(send_d, TransferError)
+        self.assertEqual(str(f), "remote error, transfer abandoned: file already exists")
+
+        send_stdout = sargs['stdout'].getvalue()
+        send_stderr = sargs['stderr'].getvalue()
+        receive_stdout = rargs['stdout'].getvalue()
+        receive_stderr = rargs['stderr'].getvalue()
 
         # all output here comes from a StringIO, which uses \n for
         # newlines, even if we're on windows
@@ -528,11 +543,12 @@ class NotWelcome(ServerBase, unittest.TestCase):
                        "--transit-helper", ""]
         send_args = common_args + [ "send", "--text", "hi",
                                     "--code", u"1-abc" ]
-        sargs = runner.parser.parse_args(send_args)
-        sargs.cwd = self.mktemp()
-        sargs.stdout = io.StringIO()
-        sargs.stderr = io.StringIO()
-        sargs.timing = DebugTiming()
+        sargs = runner.WormholeOptions()
+        sargs.parseOptions(send_args)
+        sargs['cwd'] = self.mktemp()
+        sargs['stdout'] = io.StringIO()
+        sargs['stderr'] = io.StringIO()
+        sargs['timing'] = DebugTiming()
 
         send_d = cmd_send.send(sargs)
         f = yield self.assertFailure(send_d, WelcomeError)
@@ -544,11 +560,12 @@ class NotWelcome(ServerBase, unittest.TestCase):
                        "--relay-url", self.relayurl,
                        "--transit-helper", ""]
         receive_args = common_args + [ "receive", u"1-abc" ]
-        rargs = runner.parser.parse_args(receive_args)
-        rargs.cwd = self.mktemp()
-        rargs.stdout = io.StringIO()
-        rargs.stderr = io.StringIO()
-        rargs.timing = DebugTiming()
+        rargs = runner.WormholeOptions()
+        rargs.parseOptions(receive_args)
+        rargs['cwd'] = self.mktemp()
+        rargs['stdout'] = io.StringIO()
+        rargs['stderr'] = io.StringIO()
+        rargs['timing'] = DebugTiming()
 
         receive_d = cmd_receive.receive(rargs)
         f = yield self.assertFailure(receive_d, WelcomeError)
@@ -562,18 +579,21 @@ class Cleanup(ServerBase, unittest.TestCase):
         common_args = ["--hide-progress",
                        "--relay-url", self.relayurl,
                        "--transit-helper", ""]
-        sargs = runner.parser.parse_args(common_args +
-                                         ["send",
-                                          "--text", "secret message",
-                                          "--code", code])
-        sargs.stdout = io.StringIO()
-        sargs.stderr = io.StringIO()
-        sargs.timing = DebugTiming()
-        rargs = runner.parser.parse_args(common_args +
-                                         ["receive", code])
-        rargs.stdout = io.StringIO()
-        rargs.stderr = io.StringIO()
-        rargs.timing = DebugTiming()
+        sargs = runner.WormholeOptions()
+        sargs.parseOptions(
+            common_args +
+            ["send",
+             "--text", "secret message",
+             "--code", code]
+        )
+        sargs['stdout'] = io.StringIO()
+        sargs['stderr'] = io.StringIO()
+        sargs['timing'] = DebugTiming()
+        rargs = runner.WormholeOptions()
+        rargs.parseOptions(common_args + ["receive", code])
+        rargs['stdout'] = io.StringIO()
+        rargs['stderr'] = io.StringIO()
+        rargs['timing'] = DebugTiming()
         send_d = cmd_send.send(sargs)
         receive_d = cmd_receive.receive(rargs)
 
@@ -590,18 +610,21 @@ class Cleanup(ServerBase, unittest.TestCase):
         common_args = ["--hide-progress",
                        "--relay-url", self.relayurl,
                        "--transit-helper", ""]
-        sargs = runner.parser.parse_args(common_args +
-                                         ["send",
-                                          "--text", "secret message",
-                                          "--code", u"1-abc"])
-        sargs.stdout = io.StringIO()
-        sargs.stderr = io.StringIO()
-        sargs.timing = DebugTiming()
-        rargs = runner.parser.parse_args(common_args +
-                                         ["receive", u"1-WRONG"])
-        rargs.stdout = io.StringIO()
-        rargs.stderr = io.StringIO()
-        rargs.timing = DebugTiming()
+        sargs = runner.WormholeOptions()
+        sargs.parseOptions(
+            common_args +
+            ["send",
+             "--text", "secret message",
+             "--code", u"1-abc"]
+        )
+        sargs['stdout'] = io.StringIO()
+        sargs['stderr'] = io.StringIO()
+        sargs['timing'] = DebugTiming()
+        rargs = runner.WormholeOptions()
+        rargs.parseOptions(common_args + ["receive", u"1-WRONG"])
+        rargs['stdout'] = io.StringIO()
+        rargs['stderr'] = io.StringIO()
+        rargs['timing'] = DebugTiming()
         send_d = cmd_send.send(sargs)
         receive_d = cmd_receive.receive(rargs)
 

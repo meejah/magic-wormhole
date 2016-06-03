@@ -41,7 +41,7 @@ def run(reactor, argv, cwd, stdout, stderr, executable=None):
     def _maybe_dump_timing(res):
         timing.add("exit")
         if parser['dump-timing']:
-            timing.write(args['dump_timing'], stderr)
+            timing.write(parser['dump-timing'], stderr)
         return res
     d.addBoth(_maybe_dump_timing)
     def _explain_error(f):
@@ -71,7 +71,3 @@ def entry():
     setuptools has already put the installed package on sys.path ."""
     react(run, (sys.argv[1:], os.getcwd(), sys.stdout, sys.stderr,
                 sys.argv[0]))
-
-if __name__ == "__main__":
-    args = parser.parse_args()
-    print(args)

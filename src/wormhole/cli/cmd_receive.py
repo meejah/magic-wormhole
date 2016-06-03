@@ -140,8 +140,8 @@ class TwistedReceiver:
 
     @inlineCallbacks
     def _build_transit(self, w, sender_transit):
-        tr = TransitReceiver(self.args['transit_helper'],
-                             no_listen=self.args['no_listen'],
+        tr = TransitReceiver(self.args['transit-helper'],
+                             no_listen=self.args['no-listen'],
                              tor_manager=self._tor_manager,
                              reactor=self._reactor,
                              timing=self.args['timing'])
@@ -221,8 +221,8 @@ class TwistedReceiver:
         # the basename() is intended to protect us against
         # "~/.ssh/authorized_keys" and other attacks
         destname = os.path.basename(destname)
-        if self.args['output_file']:
-            destname = self.args['output_file'] # override
+        if self.args.subOptions['output-file']:
+            destname = self.args.subOptions['output-file'] # override
         abs_destname = os.path.join(self.args['cwd'], destname)
 
         # get confirmation from the user before writing to the local directory
