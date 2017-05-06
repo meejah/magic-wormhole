@@ -31,54 +31,91 @@ class PrivacyEnhancedSite(server.Site):
         if self.logRequests:
             return server.Site.log(self, request)
 
+
+def create_relay_server(
+        rendezvous_web_port,
+        transit_port,
+        advertise_version,
+        db_url=":memory:",
+        blur_usage=None,
+        signal_error=None,
+        stats_file=None):
+    """
+    Returns a new RelayServer service instance
+    """
+
+    db = get_db(db_url)
+
+    welcome = {
+        # The primary (python CLI) implementation will emit a message if
+        # its version does not match this key. If/when we have
+        # distributions which include older version, but we still expect
+        # them to be compatible, stop sending this key.
+        "current_cli_version": __version__,
+
+        # adding .motd will cause all clients to display the message,
+        # then keep running normally
+        #"motd": "Welcome to the public relay.\nPlease enjoy this service.",
+
+        # adding .error will cause all clients to fail, with this message
+        #"error": "This server has been disabled, see URL for details.",
+    }
+    if advertise_version:
+        welcome["current_cli_version"] = advertise_version
+    if signal_error:
+        welcome["error"] = signal_error
+
+    rendezvous = Rendezvous(db, welcome, blur_usage)
+
+    root = Root()
+    wsrf = WebSocketRendezvousFactory(None, rendezvous, self._allow_list)
+    root.putChild(b"v1", WebSocketResource(wsrf))
+
+    site = PrivacyEnhancedSite(root)
+    if blur_usage:
+        site.logRequests = False
+
+    r = endpoints.serverFromString(reactor, rendezvous_web_port)
+    web_service = internet.StreamServerEndpointService(r, site)
+
+    if transit_port:
+        transit = Transit(db, blur_usage)
+        t = endpoints.serverFromString(reactor, transit_port)
+        transit_service = internet.StreamServerEndpointService(t, transit)
+    else:
+        transit_service = None
+
+    return RelayServer(
+        rendezvous,
+        web_service,
+        transit_service,
+        db,
+        blur_usage=blur_usage,
+        stats_file=stats_file,
+    )
+
+
 class RelayServer(service.MultiService):
-    def __init__(self, rendezvous_web_port, transit_port,
-                 advertise_version, db_url=":memory:", blur_usage=None,
-                 signal_error=None, stats_file=None, allow_list=True):
+    def __init__(
+            self,
+            rendezvous,
+            web_service,
+            transit_service,
+            db,
+            blur_usage=None,
+            stats_file=None,
+            allow_list=True):
         service.MultiService.__init__(self)
         self._blur_usage = blur_usage
         self._allow_list = allow_list
 
-        db = get_db(db_url)
-        welcome = {
-            # The primary (python CLI) implementation will emit a message if
-            # its version does not match this key. If/when we have
-            # distributions which include older version, but we still expect
-            # them to be compatible, stop sending this key.
-            "current_cli_version": __version__,
-
-            # adding .motd will cause all clients to display the message,
-            # then keep running normally
-            #"motd": "Welcome to the public relay.\nPlease enjoy this service.",
-
-            # adding .error will cause all clients to fail, with this message
-            #"error": "This server has been disabled, see URL for details.",
-            }
-        if advertise_version:
-            welcome["current_cli_version"] = advertise_version
-        if signal_error:
-            welcome["error"] = signal_error
-
-        self._rendezvous = Rendezvous(db, welcome, blur_usage)
+        self._rendezvous = rendezvous
         self._rendezvous.setServiceParent(self) # for the pruning timer
 
-        root = Root()
-        wsrf = WebSocketRendezvousFactory(None, self._rendezvous, self._allow_list)
-        root.putChild(b"v1", WebSocketResource(wsrf))
-
-        site = PrivacyEnhancedSite(root)
-        if blur_usage:
-            site.logRequests = False
-
-        r = endpoints.serverFromString(reactor, rendezvous_web_port)
-        rendezvous_web_service = internet.StreamServerEndpointService(r, site)
+        rendezvous_web_service = web_service
         rendezvous_web_service.setServiceParent(self)
 
-        if transit_port:
-            transit = Transit(db, blur_usage)
-            transit.setServiceParent(self) # for the timer
-            t = endpoints.serverFromString(reactor, transit_port)
-            transit_service = internet.StreamServerEndpointService(t, transit)
+        if transit_service:
             transit_service.setServiceParent(self)
 
         self._stats_file = stats_file
@@ -92,12 +129,12 @@ class RelayServer(service.MultiService):
 
         # make some things accessible for tests
         self._db = db
-        self._root = root
         self._rendezvous_web_service = rendezvous_web_service
-        self._rendezvous_websocket = wsrf
+        self._rendezvous_websocket = rendezvous_web_service.factory
         self._transit = None
-        if transit_port:
-            self._transit = transit
+        if transit_service:
+            transit_service.factory.setServiceParent(self) # for the timer
+            self._transit = transit_service.factory
             self._transit_service = transit_service
 
     def startService(self):

@@ -1271,7 +1271,7 @@ class Summary(unittest.TestCase):
 
 class DumpStats(unittest.TestCase):
     def test_nostats(self):
-        rs = server.RelayServer(str("tcp:0"), str("tcp:0"), None)
+        rs = server.create_relay_server(str("tcp:0"), str("tcp:0"), None)
         # with no ._stats_file, this should do nothing
         rs.dump_stats(1, 1)
 
@@ -1279,7 +1279,7 @@ class DumpStats(unittest.TestCase):
         basedir = self.mktemp()
         os.mkdir(basedir)
         fn = os.path.join(basedir, "stats.json")
-        rs = server.RelayServer(str("tcp:0"), str("tcp:0"), None,
+        rs = server.create_relay_server(str("tcp:0"), str("tcp:0"), None,
                                 stats_file=fn)
         now = 1234
         validity = 500

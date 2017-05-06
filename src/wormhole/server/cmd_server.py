@@ -12,8 +12,8 @@ class MyPlugin(object):
     def makeService(self, so):
         # delay this import as late as possible, to allow twistd's code to
         # accept --reactor= selection
-        from .server import RelayServer
-        return RelayServer(
+        from .server import create_relay_server
+        return create_relay_server(
             self.args.rendezvous,
             self.args.transit,
             self.args.advertise_version,

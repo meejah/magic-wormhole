@@ -20,10 +20,12 @@ class ServerBase:
         self.transitport = allocate_tcp_port()
         # need to talk to twisted team about only using unicode in
         # endpoints.serverFromString
-        s = RelayServer("tcp:%d:interface=127.0.0.1" % self.relayport,
-                        "tcp:%s:interface=127.0.0.1" % self.transitport,
-                        advertise_version=__version__,
-                        signal_error=error)
+        s = create_relay_server(
+            "tcp:%d:interface=127.0.0.1" % self.relayport,
+            "tcp:%s:interface=127.0.0.1" % self.transitport,
+            advertise_version=__version__,
+            signal_error=error
+        )
         s.setServiceParent(self.sp)
         self._rendezvous = s._rendezvous
         self._transit_server = s._transit
