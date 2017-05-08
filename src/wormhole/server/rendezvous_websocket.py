@@ -173,10 +173,13 @@ class WebSocketRendezvous(websocket.WebSocketServerProtocol):
 
 
     def handle_list(self):
-        nameplate_ids = sorted(self._app.get_nameplate_ids())
-        # provide room to add nameplate attributes later (like which wordlist
-        # is used for each, maybe how many words)
-        nameplates = [{"id": nid} for nid in nameplate_ids]
+        if self.factory.allow_list:
+            nameplate_ids = sorted(self._app.get_nameplate_ids())
+            # provide room to add nameplate attributes later (like which wordlist
+            # is used for each, maybe how many words)
+            nameplates = [{"id": nid} for nid in nameplate_ids]
+        else:
+            nameplates = []
         self.send("nameplates", nameplates=nameplates)
 
     def handle_allocate(self, server_rx):
@@ -292,8 +295,11 @@ class WebSocketRendezvous(websocket.WebSocketServerProtocol):
 
 class WebSocketRendezvousFactory(websocket.WebSocketServerFactory):
     protocol = WebSocketRendezvous
-    def __init__(self, url, rendezvous):
+
+    def __init__(self, url, rendezvous, allow_list=True):
         websocket.WebSocketServerFactory.__init__(self, url)
         self.setProtocolOptions(autoPingInterval=60, autoPingTimeout=600)
         self.rendezvous = rendezvous
         self.reactor = reactor # for tests to control
+        # options
+        self.allow_list = allow_list

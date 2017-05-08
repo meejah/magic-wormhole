@@ -19,6 +19,7 @@ class MyPlugin:
             self.args.blur_usage,
             signal_error=self.args.signal_error,
             stats_file="stats.json",
+            allow_list=self.args.allow_list,
         )
 
 class MyTwistdConfig(twistd.ServerOptions):

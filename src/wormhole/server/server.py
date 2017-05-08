@@ -34,9 +34,10 @@ class PrivacyEnhancedSite(server.Site):
 class RelayServer(service.MultiService):
     def __init__(self, rendezvous_web_port, transit_port,
                  advertise_version, db_url=":memory:", blur_usage=None,
-                 signal_error=None, stats_file=None):
+                 signal_error=None, stats_file=None, allow_list=True):
         service.MultiService.__init__(self)
         self._blur_usage = blur_usage
+        self._allow_list = allow_list
 
         db = get_db(db_url)
         welcome = {
@@ -62,7 +63,7 @@ class RelayServer(service.MultiService):
         self._rendezvous.setServiceParent(self) # for the pruning timer
 
         root = Root()
-        wsrf = WebSocketRendezvousFactory(None, self._rendezvous)
+        wsrf = WebSocketRendezvousFactory(None, self._rendezvous, self._allow_list)
         root.putChild(b"v1", WebSocketResource(wsrf))
 
         site = PrivacyEnhancedSite(root)
