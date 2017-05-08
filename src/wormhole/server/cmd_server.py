@@ -11,12 +11,15 @@ class MyPlugin:
         # delay this import as late as possible, to allow twistd's code to
         # accept --reactor= selection
         from .server import RelayServer
-        return RelayServer(self.args.rendezvous, self.args.transit,
-                           self.args.advertise_version,
-                           "relay.sqlite", self.args.blur_usage,
-                           signal_error=self.args.signal_error,
-                           stats_file="stats.json",
-                           )
+        return RelayServer(
+            self.args.rendezvous,
+            self.args.transit,
+            self.args.advertise_version,
+            "relay.sqlite",
+            self.args.blur_usage,
+            signal_error=self.args.signal_error,
+            stats_file="stats.json",
+        )
 
 class MyTwistdConfig(twistd.ServerOptions):
     subCommands = [("XYZ", None, usage.Options, "node")]
