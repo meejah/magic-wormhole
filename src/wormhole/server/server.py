@@ -109,6 +109,8 @@ class RelayServer(service.MultiService):
             log.msg("not logging HTTP requests or Transit connections")
         else:
             log.msg("not blurring access times")
+        if not self._allow_list:
+            log.msg("listing of allocated nameplates disallowed")
 
     def timer(self):
         now = time.time()
