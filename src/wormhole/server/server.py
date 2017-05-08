@@ -40,6 +40,7 @@ def create_relay_server(
         blur_usage=None,
         signal_error=None,
         stats_file=None,
+        allow_list=True,
         rendezvous_factory=Rendezvous):
     """
     Returns a new RelayServer service instance
@@ -69,7 +70,7 @@ def create_relay_server(
     rendezvous = rendezvous_factory(db, welcome, blur_usage)
 
     root = Root()
-    wsrf = WebSocketRendezvousFactory(None, rendezvous, self._allow_list)
+    wsrf = WebSocketRendezvousFactory(None, rendezvous, allow_list=allow_list)
     root.putChild(b"v1", WebSocketResource(wsrf))
 
     site = PrivacyEnhancedSite(root)
