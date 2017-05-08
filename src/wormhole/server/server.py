@@ -39,7 +39,8 @@ def create_relay_server(
         db_url=":memory:",
         blur_usage=None,
         signal_error=None,
-        stats_file=None):
+        stats_file=None,
+        rendezvous_factory=Rendezvous):
     """
     Returns a new RelayServer service instance
     """
@@ -65,7 +66,7 @@ def create_relay_server(
     if signal_error:
         welcome["error"] = signal_error
 
-    rendezvous = Rendezvous(db, welcome, blur_usage)
+    rendezvous = rendezvous_factory(db, welcome, blur_usage)
 
     root = Root()
     wsrf = WebSocketRendezvousFactory(None, rendezvous, self._allow_list)
