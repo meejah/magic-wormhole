@@ -3,10 +3,12 @@ import os, time
 from twisted.python import usage
 from twisted.scripts import twistd
 
-class MyPlugin:
+class MyPlugin(object):
     tapname = "xyznode"
+
     def __init__(self, args):
         self.args = args
+
     def makeService(self, so):
         # delay this import as late as possible, to allow twistd's code to
         # accept --reactor= selection
