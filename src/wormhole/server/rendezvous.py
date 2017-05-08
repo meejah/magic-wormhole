@@ -159,7 +159,8 @@ class Mailbox:
             stop_f()
         self._listeners = {}
 
-class AppNamespace:
+class AppNamespace(object):
+
     def __init__(self, db, blur_usage, log_requests, app_id):
         self._db = db
         self._blur_usage = blur_usage
@@ -506,6 +507,8 @@ class AppNamespace:
             channel._shutdown()
 
 class Rendezvous(service.MultiService):
+    namespace_factory = AppNamespace
+
     def __init__(self, db, welcome, blur_usage):
         service.MultiService.__init__(self)
         self._db = db
@@ -525,9 +528,12 @@ class Rendezvous(service.MultiService):
         if not app_id in self._apps:
             if self._log_requests:
                 log.msg("spawning app_id %s" % (app_id,))
-            self._apps[app_id] = AppNamespace(self._db,
-                                              self._blur_usage,
-                                              self._log_requests, app_id)
+            self._apps[app_id] = self.namespace_factory(
+                self._db,
+                self._blur_usage,
+                self._log_requests,
+                app_id,
+            )
         return self._apps[app_id]
 
     def get_all_apps(self):
