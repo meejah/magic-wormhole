@@ -440,7 +440,15 @@ def _forward_loop(args, w):
             print("command connection")
 
         def dataReceived(self, data):
-            print("command data", data)
+            # XXX can we depend on data being "one message"?
+            msg = json.loads(data)
+            print("command data", msg)
+            if (msg["kind"] == "remote-to-local"):
+                listen_ep = serverToString(msg["listen-endpoint"])
+                factory = Factory.forProtocol(LocalServer)
+                factory.endpoint_str = msg["local-endpoint"]
+                proto = listen_ep.listen(factory)
+                print("accepted forward request")
 
         def connectionLost(self, reason):
             print("command connectionLost", reason)
