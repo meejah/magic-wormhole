@@ -444,7 +444,7 @@ def _forward_loop(args, w):
             msg = json.loads(data)
             print("command data", msg)
             if (msg["kind"] == "remote-to-local"):
-                listen_ep = serverFromString(msg["listen-endpoint"])
+                listen_ep = serverFromString(reactor, msg["listen-endpoint"])
                 factory = Factory.forProtocol(LocalServer)
                 factory.endpoint_str = msg["local-endpoint"]
                 proto = listen_ep.listen(factory)
