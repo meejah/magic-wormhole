@@ -446,7 +446,8 @@ def _forward_loop(args, w):
             if (msg["kind"] == "remote-to-local"):
                 listen_ep = serverFromString(reactor, msg["listen-endpoint"])
                 factory = Factory.forProtocol(LocalServer)
-                factory.connect_ep = clientFromString(reactor, msg["connect-endpoint"])
+                factory.endpoint_str = msg["connect-endpoint"]
+                factory.connect_ep = connect_ep
                 proto = listen_ep.listen(factory)
                 print("accepted forward request")
 
