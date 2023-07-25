@@ -136,7 +136,7 @@ class Receiver:
             print("ERR: {}".format(f))
 
         from wormhole.transfer_v2 import deferred_transfer
-        yield Deferred.fromCoroutine(deferred_transfer(self._reactor, w, on_error, self.args.code))
+        yield Deferred.fromCoroutine(deferred_transfer(self._reactor, w, on_error, self.args.transit_helper, self.args.code))
         return
 
 
