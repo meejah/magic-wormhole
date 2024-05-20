@@ -1,10 +1,7 @@
-from __future__ import print_function, unicode_literals
-
 import gc
 import io
 from binascii import hexlify, unhexlify
 
-import six
 from nacl.exceptions import CryptoError
 from nacl.secret import SecretBox
 from twisted.internet import address, defer, endpoints, error, protocol, task
@@ -13,7 +10,7 @@ from twisted.python import log
 from twisted.test import proto_helpers
 from twisted.trial import unittest
 
-import mock
+from unittest import mock
 from wormhole_transit_relay import transit_server
 
 from .. import transit
@@ -141,15 +138,8 @@ class Misc(unittest.TestCase):
         self.assertIsInstance(portno, int)
 
 
-
-# ipaddrs.py currently uses native strings: bytes on py2, unicode on
-# py3
-if six.PY2:
-    LOOPADDR = b"127.0.0.1"
-    OTHERADDR = b"1.2.3.4"
-else:
-    LOOPADDR = "127.0.0.1"  # unicode_literals
-    OTHERADDR = "1.2.3.4"
+LOOPADDR = "127.0.0.1"
+OTHERADDR = "1.2.3.4"
 
 
 class Basic(unittest.TestCase):

@@ -1,4 +1,3 @@
-import six
 from collections import deque
 from attr import attrs, attrib
 from attr.validators import instance_of, provides
@@ -20,7 +19,8 @@ from ..observer import OneShotObserver
 # with a 4-byte length prefix (which only covers the padded message, not the
 # length prefix itself), so the padded message must be less than 2**32 bytes
 # long.
-MAX_FRAME_LENGTH = 2**32 - 1 - 9 - 16;
+MAX_FRAME_LENGTH = 2**32 - 1 - 9 - 16
+
 
 @attrs
 class Once(object):
@@ -56,8 +56,11 @@ class SingleUseEndpointError(Exception):
 class AlreadyClosedError(Exception):
     pass
 
+
 class NormalCloseUsedOnHalfCloseable(Exception):
     pass
+
+
 class HalfCloseUsedOnNonHalfCloseable(Exception):
     pass
 
@@ -70,7 +73,7 @@ class _WormholeAddress(object):
 @implementer(IAddress)
 @attrs
 class _SubchannelAddress(object):
-    _scid = attrib(validator=instance_of(six.integer_types))
+    _scid = attrib(validator=instance_of(int))
 
 
 @attrs(eq=False)
@@ -79,7 +82,7 @@ class _SubchannelAddress(object):
 @implementer(IConsumer)
 @implementer(ISubChannel)
 class SubChannel(object):
-    _scid = attrib(validator=instance_of(six.integer_types))
+    _scid = attrib(validator=instance_of(int))
     _manager = attrib(validator=provides(IDilationManager))
     _host_addr = attrib(validator=instance_of(_WormholeAddress))
     _peer_addr = attrib(validator=instance_of(_SubchannelAddress))
@@ -240,7 +243,10 @@ class SubChannel(object):
     # we won't ever see an OPEN, since L4 will log+ignore those for us
     closing.upon(local_data, enter=closing, outputs=[error_closed_write])
     closing.upon(local_close, enter=closing, outputs=[error_closed_close])
-    # the CLOSED state won't ever see messages, since we'll be deleted
+    # the CLOSED state shouldn't ever see messages, since we'll be deleted
+    # (but a local user should be able to call "close" without having
+    # to know what state we're in)
+    closed.upon(local_close, enter=closed, outputs=[])
 
     # our endpoints use these
 
@@ -251,7 +257,7 @@ class SubChannel(object):
             self.connect_protocol_half()
         else:
             # move from UNCONNECTED to OPEN
-            self.connect_protocol_full();
+            self.connect_protocol_full()
 
     def _deliver_queued_data(self):
         for data in self._pending_remote_data:
@@ -274,7 +280,7 @@ class SubChannel(object):
         if not IHalfCloseableProtocol.providedBy(self._protocol):
             # this is a clear error
             raise HalfCloseUsedOnNonHalfCloseable()
-        self.local_close();
+        self.local_close()
 
     def loseConnection(self):
         # TODO: what happens if an IHalfCloseableProtocol calls normal
@@ -326,6 +332,7 @@ class ControlEndpoint(object):
 
     def _main_channel_ready(self):
         self._wait_for_main_channel.fire(None)
+
     def _main_channel_failed(self, f):
         self._wait_for_main_channel.error(f)
 
@@ -355,6 +362,7 @@ class SubchannelConnectorEndpoint(object):
 
     def _main_channel_ready(self):
         self._wait_for_main_channel.fire(None)
+
     def _main_channel_failed(self, f):
         self._wait_for_main_channel.error(f)
 
@@ -403,6 +411,7 @@ class SubchannelListenerEndpoint(object):
 
     def _main_channel_ready(self):
         self._wait_for_main_channel.fire(None)
+
     def _main_channel_failed(self, f):
         self._wait_for_main_channel.error(f)
 

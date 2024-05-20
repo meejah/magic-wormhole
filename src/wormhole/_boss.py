@@ -1,8 +1,5 @@
-from __future__ import absolute_import, print_function, unicode_literals
-
 import re
 
-import six
 from attr import attrib, attrs
 from attr.validators import instance_of, optional, provides
 from automat import MethodicalMachine
@@ -209,7 +206,8 @@ class Boss(object):
     # "async def can_dilate" then we could decide things based on
     # "supports dilation, or not"
     def dilate(self, transit_relay_location=None, no_listen=False):
-        return self._D.dilate(transit_relay_location, no_listen=no_listen)  # fires with endpoints
+        # fires with endpoints
+        return self._D.dilate(transit_relay_location, no_listen=no_listen)
 
     @m.input()
     def send(self, plaintext):
@@ -368,7 +366,7 @@ class Boss(object):
 
     @m.output()
     def W_received(self, phase, plaintext):
-        assert isinstance(phase, six.integer_types), type(phase)
+        assert isinstance(phase, int), type(phase)
         # we call Wormhole.received() in strict phase order, with no gaps
         self._rx_phases[phase] = plaintext
         while self._next_rx_phase in self._rx_phases:
@@ -377,7 +375,7 @@ class Boss(object):
 
     @m.output()
     def D_received_dilate(self, seqnum, plaintext):
-        assert isinstance(seqnum, six.integer_types), type(seqnum)
+        assert isinstance(seqnum, int), type(seqnum)
         # strict phase order, no gaps
         self._rx_dilate_seqnums[seqnum] = plaintext
         while self._next_rx_dilate_seqnum in self._rx_dilate_seqnums:
