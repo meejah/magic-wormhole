@@ -282,6 +282,7 @@ class Manager(object):
 
     def send_dilation_phase(self, **fields):
         dilation_phase = self._next_dilation_phase
+        self._maybe_send_status(DilationStatus(phase=dilation_phase))
         self._next_dilation_phase += 1
         self._S.send("dilate-%d" % dilation_phase, dict_to_bytes(fields))
 
@@ -549,12 +550,24 @@ class Manager(object):
 
     @m.output()
     def start_connecting_ignore_message(self, message):
+        self._maybe_send_status(
+            DilationStatus(
+                phase=self._next_dilation_phase,
+                connection=Connected("don't know it here"),
+            )
+        )
         print("start connecting, ignore message")
         del message  # ignored
         return self._start_connecting()
 
     @m.output()
     def start_connecting(self):
+        self._maybe_send_status(
+            DilationStatus(
+                phase=self._next_dilation_phase,
+                connection=Connected("don't know it here"),
+            )
+        )
         print("start connecting")
         self._start_connecting()
 
@@ -597,6 +610,7 @@ class Manager(object):
     @m.output()
     def stop_connecting(self):
         print("stop connecting")
+        self._maybe_send_status()
         self._connector.stop()
 
     @m.output()
