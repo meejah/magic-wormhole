@@ -1,6 +1,6 @@
 from __future__ import absolute_import, print_function, unicode_literals
 
-from typing import Union, Callable
+from typing import Union, Callable, List, Dict, BinaryIO
 
 from attr import define, field
 from automat import MethodicalMachine
@@ -14,36 +14,78 @@ from ._key import derive_phase_key, encrypt_data
 
 
 @define
-class Offer:
+class FileOffer:
     id: int          # unique random identifier for this offer
     filename: str    # unicode relative pathname
     timestamp: int   # Unix timestamp (seconds since the epoch in GMT)
     bytes: int       # total number of bytes in the file
-    subchannel: int  # the subchannel which the file will be sent on
-    kind: int = 1    # "offer"
+    _file: BinaryIO # file-like (how do we do typing protocols?)
+    kind: int = 0x01 # "file offer"
+
+
+@define
+class DirectoryOffer:
+    id: int          # unique random identifier for this offer
+    base: str        # unicode relative pathname
+    timestamp: int   # Unix timestamp (seconds since the epoch in GMT)
+    bytes: int       # total number of bytes in all files
+    kind: int = 0x02 # "directoryoffer"
 
 
 @define
 class OfferReject:
     id: int          # matching identifier for an existing offer from the other side
     reason: str      # unicode string describing why the offer is rejected
-    kind: int = 2    #  "offer reject"
+    kind: int = 0x04 #  "offer reject"
 
 
 @define
 class OfferAccept:
     id: int          # matching identifier for an existing offer from the other side
-    kind: int = 3    #  "offer accpet"
+    kind: int = 0x03 #  "offer accpet"
 
 
+# control-channel messages
 @define
 class Message:
-    message: str     # unicode string
-    kind: int = 4    # "text message"
+    message: str        # unicode string
+    kind: str = "text"
+
+
+def get_appversion(mode=None, features=None, ask_permission=False):
+    """
+    Create a dict suitable to union into the ``app_versions``
+    information of a Wormhole negotiation. Will be a dict with
+    "transfer" mapping to a dict containing our current app-version
+    information
+    """
+    if mode is None:
+        mode = "send"
+    if mode not in ["send", "receive", "connect"]:
+        raise ValueError(
+            "Illegal 'mode' for file-transfer: '{}'".format(mode)
+        )
+    # it's okay to have "unknown" features ... so just check it's "a
+    # list of strings"
+    if features is None:
+        features = ["basic"]
+    if not isinstance(features, list) or any(not isinstance(x, str) for x in features):
+        raise ValueError(
+            "'features' must be a list of str"
+        )
+
+    return {
+        "transfer": {
+            "version": 1,
+            "mode": mode,
+            "features": features,
+            "permission": "ask" if ask_permission else "yes",
+        }
+    }
 
 
 # wormhole: _DeferredWormhole,
-def deferred_transfer(wormhole, on_error):
+def deferred_transfer(wormhole, on_error, maybe_code=None, offers=[]):
     """
     Do transfer protocol over an async wormhole interface
     """
@@ -54,33 +96,37 @@ def deferred_transfer(wormhole, on_error):
         nonlocal control_proto
 
         # XXX FIXME
-        wormhole.allocate_code(2)
+        if maybe_code is None:
+            wormhole.allocate_code(2)
+        else:
+            wormhole.set_code(maybe_code)
         code = await wormhole.get_code()
         print("code", code)
 
         versions = await wormhole.get_versions()
         print("versions", versions)
         try:
-            v2 = versions["transit-v2"]
+            transfer = versions["transfer"]
         except KeyError:
-            raise RuntimeError("Peer doesn't support transit-v2")
-        mode = v2.get("mode", None)
-        formats = v2.get("formats", ())
+            raise RuntimeError("Peer doesn't support transfer-v2")
+        if transfer.get("version", None) != 1:
+            raise RuntimeError("Unknown or missing transfer version")
+
+        mode = transfer.get("mode", None)
+        features = transfer.get("features", ())
 
         if mode not in ["send", "receive", "connect"]:
-            raise Exception("protocol error")
-        if 1 not in formats:
-            raise Exception("protocol error")
+            raise Exception("Unknown mode '{}'".format(mode))
+        if "basic" not in features:
+            raise Exception("Must support 'basic' feature")
         print("waiting to dilate")
-        endpoints = await wormhole.dilate()
+        endpoints = wormhole.dilate()
         print("got endpoints", endpoints)
 
         class TransferControl(Protocol):
             pass
-        control_proto = await endpoints.control_endpoint.connect(Factory.forProtocol(TransferControl))
-
-    d = Deferred.fromCoroutine(get_control_proto())
-    d.addBoth(print)
+        control_proto = await endpoints.control.connect(Factory.forProtocol(TransferControl))
+        return control_proto
 
     def send_control_message(message):
         print(f"send_control: {message}")
@@ -95,13 +141,30 @@ def deferred_transfer(wormhole, on_error):
         on_done()
         return
 
+#    transfer = TransferV2()
     transfer = TransferV2(send_control_message, send_file_in_offer, receive_file_in_offer)
+
+    transfer.set_trace(print)
+
+    for offer in offers:
+        transfer.make_offer(offer)
+
+    d = Deferred.fromCoroutine(get_control_proto())
+
+    @d.addCallback
+    def got_control(control):
+        print("control", control)
+        transfer.dilated()
+        return control
+
     return transfer
 
 
+## XXX actually we want a state-machine for each offer
+##
 
 
-@define
+@define(slots=False)
 class TransferV2(object):
     """
     Speaks both ends of the Transfer v2 application protocol
@@ -113,14 +176,16 @@ class TransferV2(object):
     # just get "a Callable to send stuff"
     # endpoints: EndpointRecord
 
-    send_control_message: Callable[[Union[Offer, OfferReject, OfferAccept]], None]
+    send_control_message: Callable[[Union[FileOffer, DirectoryOffer, OfferReject, OfferAccept]], None]
     send_file_in_offer: Callable[[Offer, Callable[[], None]], None]
     receive_file_in_offer: Callable[[Offer, Callable[[], None]], None]
 
-    _queued_offers = field(factory=list)
-    _offers = field(factory=dict)
-    _peer_offers = field(factory=dict)
-    _when_done = field(factory=list)
+    _queued_offers: List[Offer] = field(factory=list)
+    _offers: Dict[str, Offer] = field(factory=dict)
+    _peer_offers: Dict [str, Offer] = field(factory=dict)
+    _when_done: List[Deferred] = field(factory=list)
+
+    set_trace = getattr(m, "_setTrace", lambda self, f: None)
 
     # XXX OneShotObserver
     def when_done(self):
@@ -207,18 +272,21 @@ class TransferV2(object):
 
     @m.output()
     def _queue_offer(self, offer):
+        print("queue offer", offer)
         self._queued_offers.append(offer)
 
     @m.output()
     def _send_queued_offers(self):
-        to_send = self._offers
-        self._offers = None  # can't go back to await_dilation
+        print("send queued", len(self._queued_offers))
+        to_send = self._queued_offers
+        self._queued_offers = None  # can't go back to "await_dilation" state
         for offer in to_send:
             self.send_control_message(offer)
             self._offers[offer.id] = offer
 
     @m.output()
     def _send_offer(self, offer):
+        print("sendoffer")
         self.send_control_message(offer)
         self._offers[offer.id] = offer
 
