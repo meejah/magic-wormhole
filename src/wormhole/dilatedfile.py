@@ -2,8 +2,84 @@
 # prototype state-machine "diagrams" / skeleton code for Dilated File
 # Transfer
 
-from attr import define, field
+from attr import define, field, Factory
 from automat import MethodicalMachine
+from typing import BinaryIO, List, Any
+
+from twisted.internet.defer import Deferred, ensureDeferred
+from twisted.internet.protocol import Protocol, Factory
+
+from .observer import OneShotObserver
+
+
+def get_appversion(mode=None, features=None, ask_permission=False):
+    """
+    Create a dict suitable to union into the ``app_versions``
+    information of a Wormhole negotiation. Will be a dict with
+    "transfer" mapping to a dict containing our current app-version
+    information
+    """
+    if mode is None:
+        mode = "send"
+    if mode not in ["send", "receive", "connect"]:
+        raise ValueError(
+            "Illegal 'mode' for file-transfer: '{}'".format(mode)
+        )
+    # it's okay to have "unknown" features ... so just check it's "a
+    # list of strings"
+    if features is None:
+        features = ["core0"]
+    if not isinstance(features, list) or any(not isinstance(x, str) for x in features):
+        raise ValueError(
+            "'features' must be a list of str"
+        )
+    if "core0" not in features:
+        raise ValueError(
+            "Must support 'core0' feature"
+        )
+
+    return {
+        "transfer": {
+            "mode": mode,
+            "features": features,
+            "permission": "ask" if ask_permission else "yes",
+        }
+    }
+
+
+@define
+class FileOffer:
+    filename: str    # unicode relative pathname
+    timestamp: int   # Unix timestamp (seconds since the epoch in GMT)
+    bytes: int       # total number of bytes in the file
+    _file: BinaryIO # file-like (how do we do typing protocols?)
+    kind: int = 0x01 # "file offer"
+
+
+@define
+class DirectoryOffer:
+    base: str        # unicode relative pathname
+    timestamp: int   # Unix timestamp (seconds since the epoch in GMT)
+    bytes: int       # total number of bytes in all files
+    kind: int = 0x02 # "directoryoffer"
+
+
+@define
+class OfferReject:
+    reason: str      # unicode string describing why the offer is rejected
+    kind: int = 0x04 #  "offer reject"
+
+
+@define
+class OfferAccept:
+    kind: int = 0x03 #  "offer accpet"
+
+
+# control-channel messages
+@define
+class Message:
+    message: str        # unicode string
+    kind: str = "text"
 
 
 @define
@@ -307,7 +383,7 @@ class DilatedFileSender:
 
     @m.output()
     def _send_offer(self, offer):
-        pass
+        print("SEND", offer)
 
     @m.output()
     def _close_input_file(self):
@@ -379,14 +455,25 @@ class DilatedFileSender:
     )
 
 
-
-
-@define
+# need slots=False to play nicely with MethodicalMachine
+@define(slots=False)
 class DilatedFileTransfer(object):
     """
     Manages transfers for the Dilated File Transfer protocol
     """
+
+    # state-machine stuff
     m = MethodicalMachine()
+    set_trace = getattr(m, "_setTrace", lambda self, f: None)
+
+    _reactor: Any  # IReactor / EventualQueue .. what type do we really want?
+
+    def __attrs_post_init__(self):
+        self._done = OneShotObserver(self._reactor)
+
+
+    def when_done(self):
+        return self._done.when_fired()
 
     def got_peer_versions(self, versions):
         if versions["mode"] == "send":
@@ -397,6 +484,12 @@ class DilatedFileTransfer(object):
             self.peer_connect()
 
     @m.state(initial=True)
+    def await_peer(self):
+        """
+        We haven't connected to our peer yet
+        """
+
+    @m.state()
     def dilated(self):
         """
         Dilated connection is open
@@ -433,19 +526,30 @@ class DilatedFileTransfer(object):
         """
 
     @m.input()
-    def peer_send():
+    def connected(self, appversions, endpoints):
+        """
+        XXX rethink -- can't 'input to ourselves' so we want the
+        higher-level thing to parse appversions?
+
+        and we don't want to "give the endpoints" to this, we want to
+        pass it functions to call (i.e. so the async / whatever stuff
+        is done "outside" the state-machine)
+        """
+
+    @m.input()
+    def peer_send(self):
         """
         Peer is in mode 'send'
         """
 
     @m.input()
-    def peer_receive():
+    def peer_receive(self):
         """
         Peer is in mode 'receive'
         """
 
     @m.input()
-    def peer_connect():
+    def peer_connect(self):
         """
         Peer is in mode 'connect'
         """
@@ -486,6 +590,7 @@ class DilatedFileTransfer(object):
         """
         Make a DilatedFileSender
         """
+        return "dingding"
 
     @m.output()
     def _protocol_error(self):
@@ -510,6 +615,29 @@ class DilatedFileTransfer(object):
         """
         Abandon any in-progress receives
         """
+
+    await_peer.upon(
+        connected,
+        enter=dilated,
+        outputs=[] #_confirm_modes]
+    )
+
+    ### so either we put the "queue offers" etc _in_ the state-machine
+    ### (maybe along with e.g. "confirm modes")
+    ### ...OR we somehow "wait" outside until our peer arrives before trying to send offers? seems weird...
+    ###
+    ### ...and i guess a "queue" thing means we need to fix that
+    ### automat bug? because then "send the queued offers" is like a
+    ### loop that signals the state-machine itself...
+    ###
+    ### hmmmmm, while trying to write this example out for Glyph it
+    ### occurs: can we call _outputs_ directly? e.g. "while"
+    ### transitioning can we drain our "offers to send" queue my
+    ### directly calling output methods?
+    ###
+    ### and we also need an "i'm done with offers" signal ... so a
+    ### like "waiting for cleanup state"? (that's maybe "closing"?
+    ### like in the sending / receiving states)
 
     # XXX we want some error-handling here, like if both peers are
     # mode=send or both are mode=receive
@@ -584,3 +712,110 @@ class DilatedFileTransfer(object):
         enter=closed,
         outputs=[],
     )
+
+
+# wormhole: _DeferredWormhole,
+def deferred_transfer(reactor, wormhole, on_error, maybe_code=None, offers=[]):
+    """
+    Do transfer protocol over an async wormhole interface
+    """
+
+    control_proto = None
+
+    async def get_control_proto():
+        nonlocal control_proto
+
+        # XXX FIXME
+        if maybe_code is None:
+            wormhole.allocate_code(2)
+        else:
+            wormhole.set_code(maybe_code)
+        code = await wormhole.get_code()
+        print("code", code)
+
+        versions = await wormhole.get_versions()
+        print("versions", versions)
+        try:
+            transfer = versions["transfer"]
+        except KeyError:
+            raise RuntimeError("Peer doesn't support transfer-v2")
+
+        mode = transfer.get("mode", None)
+        features = transfer.get("features", ())
+
+        if mode not in ["send", "receive", "connect"]:
+            raise Exception("Unknown mode '{}'".format(mode))
+        if "core0" not in features:
+            raise Exception("Must support 'core0' feature")
+        print("waiting to dilate")
+        endpoints = wormhole.dilate()
+        print("got endpoints", endpoints)
+
+        return transfer, endpoints
+        # class TransferControl(Protocol):
+        #     pass
+        # control_proto = await endpoints.control.connect(Factory.forProtocol(TransferControl))
+        # return control_proto
+
+    def send_control_message(message):
+        print(f"send_control: {message}")
+
+    def send_file_in_offer(offer, on_done):
+        print(f"send_file: {offer}")
+        on_done()
+        return
+
+    def receive_file_in_offer(offer, on_done):
+        print(f"receive:file: {offer}")
+        on_done()
+        return
+
+    transfer = DilatedFileTransfer(reactor)
+    transfer.set_trace(print)
+
+    async def got_control(versions_and_endpoints):
+        versions, endpoints= versions_and_endpoints
+        print("versions", versions)
+
+        class TransferControl(Protocol):
+            pass
+        control_proto = await endpoints.control.connect(Factory.forProtocol(TransferControl))
+
+
+        transfer.connected(versions, endpoints)
+        try:
+            mode = versions["mode"]
+        except KeyError:
+            raise ValueError('Missing "mode" from peer')
+
+        if mode == "send":
+            transfer.peer_send()
+        elif mode == "receive":
+            transfer.peer_receive()
+        elif mode == "connect":
+            transfer.peer_connect()
+
+        for offer in offers:
+            print("send offer", offer)
+            thing = transfer.send_offer(offer)
+            print(thing)
+
+        # XXX hook up control_proto to callables that we can give to the state-machine (e.g. "send_control_message")
+        # XXX hook up control_proto to state-machine (e.g. "got_control_message")
+
+        # XXX hook up "a subchannel opened" to "got on offer" on the machine
+
+        # XXX for "send offer" etc we need to hook up "endpoints" to
+        # open a subchannel, but a DilatedFileSender on it, etc
+
+        # XXX that is, _all_ async work must be hooked up in here, and be a non-async method
+
+        # XXX error-handling / user feedback, how does that work?
+        return versions_and_endpoints
+
+    d = Deferred.fromCoroutine(get_control_proto())
+    d.addCallback(lambda x: ensureDeferred(got_control(x)))
+    d.addErrback(print)
+    # XXX error-handling?
+
+    return transfer

@@ -2,8 +2,8 @@ import errno
 import hashlib
 import os
 import sys
-
 import stat
+from typing import List
 
 from humanize import naturalsize
 from tqdm import tqdm
@@ -11,18 +11,35 @@ from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks, returnValue, Deferred
 from twisted.protocols import basic
 from twisted.python import log
+from twisted.python.filepath import FilePath
 from wormhole import __version__, create
+from attr import define, frozen
 
 from ..errors import TransferError, UnsendableFileError
 from ..transit import TransitSender
 from ..util import bytes_to_dict, bytes_to_hexstr, dict_to_bytes
 from .welcome import handle_welcome
+from ..dilatedfile import get_appversion, deferred_transfer, FileOffer
 
 from iterableio import open_iterable
 from zipstream.ng import ZipStream, walk
 
 APPID = u"lothar.com/wormhole/text-or-file-xfer"
 VERIFY_TIMER = float(os.environ.get("_MAGIC_WORMHOLE_TEST_VERIFY_TIMER", 1.0))
+
+"""
+@frozen
+class FileOffer:
+    name: str
+    size: int
+    fd: int  # 0 means "open it yourself"?
+
+
+@frozen
+class DirectoryOffer:
+    base: FilePath
+    files: List[FileOffer]
+"""
 
 
 def send(args, reactor=reactor):
@@ -67,7 +84,10 @@ class Sender:
             self._args.relay_url,
             self._reactor,
             tor=self._tor,
-            timing=self._timing)
+            timing=self._timing,
+            versions=get_appversion(mode="send"),
+            _enable_dilate=True,
+        )
         if self._args.debug_state:
             w.debug_set_trace("send", which=" ".join(self._args.debug_state), file=self._args.stdout)
         d = self._go(w)
@@ -106,11 +126,13 @@ class Sender:
         def on_error(f):
             print("ERR: {}".format(f))
 
-        from wormhole.transfer_v2 import deferred_transfer
-        transfer = deferred_transfer(w, on_error)
-        ##yield Deferred.fromCoroutine(transfer.when_done())
-        yield transfer.when_done()
-        return
+        if True:
+            offer = self._new_build_offer()
+
+            transfer = deferred_transfer(reactor, w, on_error, self._args.code, offers=[offer])
+            ##yield Deferred.fromCoroutine(transfer.when_done())
+            yield transfer.when_done()
+            return
 
         # TODO: run the blocking zip-the-directory IO in a thread, let the
         # wormhole exchange happen in parallel
@@ -258,6 +280,131 @@ class Sender:
     def _handle_transit(self, receiver_transit):
         ts = self._transit_sender
         ts.add_connection_hints(receiver_transit.get("hints-v1", []))
+
+    def _new_build_offer(self):
+        offer = {}
+
+        args = self._args
+        text = args.text
+        if text == "-":
+            print(u"Reading text message from stdin..", file=args.stderr)
+            text = sys.stdin.read()
+        if not text and not args.what:
+            text = input("Text to send: ")
+
+        if text is not None:
+            print(
+                u"Sending text message (%s)" % naturalsize(len(text)),
+                file=args.stderr)
+            return {"message": text}
+
+        # click.Path (with resolve_path=False, the default) does not do path
+        # resolution, so we must join it to cwd ourselves. We could use
+        # resolve_path=True, but then it would also do os.path.realpath(),
+        # which would replace the basename with the target of a symlink (if
+        # any), which is not what I think users would want: if you symlink
+        # X->Y and send X, you expect the recipient to save it in X, not Y.
+        #
+        # TODO: an open question is whether args.cwd (i.e. os.getcwd()) will
+        # be unicode or bytes. We need it to be something that can be
+        # os.path.joined with the unicode args.what .
+        what = os.path.join(args.cwd, args.what)
+
+        # We always tell the receiver to create a file (or directory) with the
+        # same basename as what the local user typed, even if the local object
+        # is a symlink to something with a different name. The normpath() is
+        # there to remove trailing slashes.
+        basename = os.path.basename(os.path.normpath(what))
+        assert basename != "", what  # normpath shouldn't allow this
+
+        # We use realpath() instead of normpath() to locate the actual
+        # file/directory, because the path might contain symlinks, and
+        # normpath() would collapse those before resolving them.
+        # test_cli.OfferData.test_symlink_collapse tests this.
+
+        # Unfortunately on windows, realpath() (on py3) is built out of
+        # normpath() because of a py2-era belief that windows lacks a working
+        # os.path.islink(): see https://bugs.python.org/issue9949 . The
+        # consequence is that "wormhole send PATH" might send the wrong file,
+        # if:
+        # * we're running on windows
+        # * PATH goes down through a symlink and then up with parent-directory
+        #   navigation (".."), then back down again
+        # * the back-down-again portion of the path also exists under the
+        #   original directory (an error is thrown if not)
+
+        # I'd like to fix this. The core issue is sending directories with a
+        # trailing slash: we need to 1: open the right directory, and 2: strip
+        # the right parent path out of the filenames we get from os.walk(). We
+        # used to use what.rstrip() for this, but bug #251 reported this
+        # failing on windows-with-bash. realpath() works in both those cases,
+        # but fails with the up-down symlinks situation. I think we'll need to
+        # find a third way to strip the trailing slash reliably in all
+        # environments.
+
+        what = os.path.realpath(what)
+        if not os.path.exists(what):
+            raise TransferError(
+                "Cannot send: no file/directory named '%s'" % args.what)
+
+        if os.path.isfile(what):
+            # we're sending a file
+            stat = os.stat(what)
+            return FileOffer(
+                basename,
+                stat.st_mtime,
+                stat.st_size,
+                open(what, "rb"),
+            )
+
+        if os.path.isdir(what):
+            files = []
+            dirbase = FilePath(what)
+            assert dirbase.isdir()  # ensure Twisted agrees with us
+            for fp in dirbase.walk():
+                if fp.isdir():
+                    print(f"Descending: {fp.path}")
+                    continue
+
+                try:
+                    if not os.access(fp.path, os.R_OK):
+                        raise PermissionError(errno.EACCES, os.strerror(errno.EACCES), filepath)
+                    files.append(
+                        FileOffer(
+                            os.path.relpath(fp.path, what),
+                            os.stat(fp.path).st_size,
+                            open(fp.path, "rb"),
+                        )
+                    )
+                except OSError as e:
+                    print(fp.path, e)
+                    errmsg = "{}: {}".format(fp.path, e.strerror)
+                    if not self._args.ignore_unsendable_files:
+                        raise UnsendableFileError(errmsg)
+                    print(
+                        "{} (ignoring error)".format(errmsg),
+                        file=args.stderr
+                    )
+
+            return DirectoryOffer(dirbase.basename(), files)
+
+        if stat.S_ISBLK(os.stat(what).st_mode):
+            fd_to_send = open(what, "rb")
+            filesize = fd_to_send.seek(0, 2)
+
+            offer["file"] = {
+                "filename": basename,
+                "filesize": filesize,
+            }
+            print(
+                u"Sending %s block device named '%s'" % (naturalsize(filesize),
+                                                         basename),
+                file=args.stderr)
+
+            fd_to_send.seek(0)
+            return offer, fd_to_send
+
+        raise TypeError("'%s' is neither file nor directory" % args.what)
 
     def _build_offer(self):
         offer = {}

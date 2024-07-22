@@ -165,6 +165,7 @@ def _dispatch_command(reactor, cfg, command):
         # traceback.print_exc() just prints a TB to the "yield"
         # line above ...
         Failure().printTraceback(file=cfg.stderr)
+        print("ZING", e)
         print(u"ERROR:", str(e), file=cfg.stderr)
         raise SystemExit(1)
 

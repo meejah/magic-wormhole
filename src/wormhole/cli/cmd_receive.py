@@ -16,6 +16,7 @@ from ..errors import TransferError
 from ..transit import TransitReceiver
 from ..util import (bytes_to_dict, bytes_to_hexstr, dict_to_bytes,
                     estimate_free_space)
+from ..dilatedfile import get_appversion
 from .welcome import handle_welcome
 
 APPID = u"lothar.com/wormhole/text-or-file-xfer"
@@ -80,7 +81,10 @@ class Receiver:
             self.args.relay_url,
             self._reactor,
             tor=self._tor,
-            timing=self.args.timing)
+            timing=self.args.timing,
+            versions=get_appversion(mode="receive"),
+            _enable_dilate=True,
+        )
         if self.args.debug_state:
             w.debug_set_trace("recv", which=" ".join(self.args.debug_state), file=self.args.stdout)
         self._w = w  # so tests can wait on events too
@@ -123,6 +127,17 @@ class Receiver:
         welcome = yield w.get_welcome()
         handle_welcome(welcome, self.args.relay_url, __version__,
                        self.args.stderr)
+
+        def on_error(f):
+            print("ERR: {}".format(f))
+
+        if True:
+            from ..dilatedfile import get_appversion, deferred_transfer, FileOffer
+            transfer = deferred_transfer(reactor, w, on_error, self.args.code)
+            ##yield Deferred.fromCoroutine(transfer.when_done())
+            yield transfer.when_done()
+            return
+
 
         yield self._handle_code(w)
 
