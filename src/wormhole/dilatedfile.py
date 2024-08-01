@@ -96,15 +96,15 @@ class DilatedFileReceiver:
         """
 
     @m.state()
-    def mode_ask(self):
+    def wait_offer(self):
         """
-        Ask permissions
+        Waiting for the offer message
         """
 
     @m.state()
-    def mode_yes(self):
+    def wait_permission(self):
         """
-        Immediately stream
+        Wait for the answer from our permission
         """
 
     @m.state()
@@ -114,9 +114,9 @@ class DilatedFileReceiver:
         """
 
     @m.state()
-    def receive_data(self):
+    def receiving(self):
         """
-        Accept incoming file-data
+        Accepting incoming offer data
         """
 
     @m.state()
@@ -132,21 +132,8 @@ class DilatedFileReceiver:
         """
 
     @m.input()
-    def open_mode_ask(self, subchannel):
+    def begin(self, subchannel):
         """
-        Open in 'ask' mode
-        """
-
-    @m.input()
-    def open_mode_yes(self, subchannel):
-        """
-        Open in 'yes' mode
-        """
-
-    @m.input()
-    def offer_received(self, offer):
-        """
-        The peer has sent the FileOffer
         """
 
     @m.input()
@@ -167,10 +154,18 @@ class DilatedFileReceiver:
         A decision to reject the offer
         """
 
+    # XXX NB: these inputs are like "message_received(...)" if we
+    # could pattern-match in a state-machine
     @m.input()
-    def data_received(self, data):
+    def recv_offer(self, offer):
         """
-        The peer has send data to us.
+        The initial offer message has been received
+        """
+
+    @m.input()
+    def recv_data(self, data):
+        """
+        The peer has sent file data to us.
         """
 
     @m.input()
@@ -200,14 +195,6 @@ class DilatedFileReceiver:
         """
 
     @m.output()
-    def _open_output_file(self):
-        pass
-
-    @m.output()
-    def _close_output_file(self):
-        pass
-
-    @m.output()
     def _send_accept(self):
         pass
 
@@ -216,65 +203,46 @@ class DilatedFileReceiver:
         pass
 
     @m.output()
-    def _close_subchannel(self):
+    def _handle_data(self, data):
+        print("file data", len(data))
         pass
 
     @m.output()
-    def _write_data_to_file(self, data):
-        """
-        Writing incoming data to our file
-        """
-
-    @m.output()
-    def _check_remaining(self, data):
-        """
-        Are we done?
-        """
-        # if "got all the bytes" then inject self.data_finished
+    def _check_offer_integrity(self):
+        print("done offer")
 
     start.upon(
-        open_mode_ask,
-        enter=mode_ask,
-        outputs=[_remember_subchannel],
-    )
-    start.upon(
-        open_mode_yes,
-        enter=mode_yes,
+        begin,
+        enter=wait_offer,
         outputs=[_remember_subchannel],
     )
 
-    mode_ask.upon(
-        offer_received,
-        enter=permission,
+    wait_offer.upon(
+        recv_offer,
+        enter=wait_permission,
         outputs=[_ask_about_offer],
     )
 
-    permission.upon(
+    wait_permission.upon(
         accept_offer,
-        enter=receive_data,
-        outputs=[_open_output_file, _send_accept],
+        enter=receiving,
+        outputs=[_send_accept],
     )
-    permission.upon(
+    wait_permission.upon(
         reject_offer,
         enter=closing,
-        outputs=[_send_reject, _close_subchannel],
+        outputs=[_send_reject],  # _we_ don't close subchannel .. sender does, right? we could (too) though?
     )
 
-    mode_yes.upon(
-        offer_received,
-        enter=receive_data,
-        outputs=[_open_output_file],
+    receiving.upon(
+        recv_data,
+        enter=receiving,
+        outputs=[_handle_data],
     )
-
-    receive_data.upon(
-        data_received,
-        enter=receive_data,
-        outputs=[_write_data_to_file, _check_remaining],
-    )
-    receive_data.upon(
-        data_finished,
-        enter=closing,
-        outputs=[_close_output_file, _close_subchannel],
+    receiving.upon(
+        subchannel_closed,
+        enter=closed,
+        outputs=[_check_offer_integrity],
     )
 
     closing.upon(
@@ -322,13 +290,7 @@ class DilatedFileSender:
         """
 
     @m.input()
-    def open_mode_ask(self, subchannel, offer):
-        """
-        Open in 'ask' mode
-        """
-
-    @m.input()
-    def open_mode_yes(self, subchannel, offer):
+    def begin_offer(self, offer):
         """
         Open in 'yes' mode
         """
@@ -416,14 +378,9 @@ class DilatedFileSender:
 
 
     start.upon(
-        open_mode_ask,
+        begin_offer,
         enter=permission,
-        outputs=[_remember_subchannel, _send_offer],
-    )
-    start.upon(
-        open_mode_yes,
-        enter=sending,
-        outputs=[_remember_subchannel, _send_offer, _send_some_data],
+        outputs=[_send_offer],  # XXX why did we "_remember_subchannel" before?
     )
 
     permission.upon(
@@ -584,13 +541,17 @@ class DilatedFileTransfer(object):
         """
         Make a DilatedFileReceiver
         """
+        # make DilatedFileReceiver
+        # hook it up to its subchannel data (how? we need a loop in _this_ state-machine probably?)
 
     @m.output()
     def _create_sender(self, offer):
         """
         Make a DilatedFileSender
         """
-        return "dingding"
+        fs = DilatedFileSender()
+        fs.begin_offer(offer)
+        return fs
 
     @m.output()
     def _protocol_error(self):
@@ -803,10 +764,17 @@ def deferred_transfer(reactor, wormhole, on_error, maybe_code=None, offers=[]):
         # XXX hook up control_proto to callables that we can give to the state-machine (e.g. "send_control_message")
         # XXX hook up control_proto to state-machine (e.g. "got_control_message")
 
+
         # XXX hook up "a subchannel opened" to "got on offer" on the machine
+        # -> create (and return?) the DilatedFileReceiver
+        # -> hook up the subchannel protocol so it feeds messages into the machine ^ directly
+        # -> hook subchannel protocol for disconnect etc too
+
 
         # XXX for "send offer" etc we need to hook up "endpoints" to
         # open a subchannel, but a DilatedFileSender on it, etc
+        # -> similar to above, but I guess the state-machine returns messages (which are sent to the subchannel?)
+
 
         # XXX that is, _all_ async work must be hooked up in here, and be a non-async method
 
