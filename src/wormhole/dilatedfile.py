@@ -82,6 +82,11 @@ class Message:
     kind: str = "text"
 
 
+# XXX
+# -> treat these as "sub" machines of the overall thing, and emit a
+#    "done" message when closing (so the overall machine can clean up its
+#    "ongoing Offers" list)
+
 @define
 class DilatedFileReceiver:
     """
