@@ -67,19 +67,41 @@ class DirectoryOffer:
     bytes: int        # total number of bytes in all files
     files: list[str]  # names of all files relative to base
 
+# Offer == union of DirectoryOffer, FileOffer
 
-def unpack_offer(offer):
+
+def unpack_offer(offer: bytes):
+    """
+    Deserialize a binary-encoded (wire-format) Offer
+
+    :return Offer: either a FileOffer or DirectoryOffer instance
+    """
     kinds = {
-        "file-offer": FileOffer,
-        "directory-offer": DirectoryOffer,
+        "file-offer": (FileOffer, [str, int]),
+        "directory-offer": (DirectoryOffer, [str, int, list]),
     }
     data = msgpack.unpackb(offer)
-    if data[0] not in kinds.keys():
-        raise ValueError('Unknown offer: "{}".'.format(data[0]))
     kind = data[0]
     args = data[1:]
-    # XXX more validation, does msgpack have specs?
-    return kinds[kind](*args)
+    try:
+        build_offer, schema = kinds[kind]
+    except KeyError:
+        raise ValueError(f'Unknown offer: "{kind}".')
+    _validate_arg_types(args, schema)
+    return build_offer(*args)
+
+
+def _validate_arg_types(args, schema):
+    """
+    Raises a ValueError if the types of objects in 'args' does not
+    match the types in 'schema'
+    """
+    if len(args) != len(schema):
+        raise ValueError(f"{len(args)} args versus {len(schema)} schema types")
+    for a, s in zip(args, schema):
+        if not isinstance(a, s):
+            raise ValueError(f"Type mismatch: wanted {s} but have {type(a)}")
+    return
 
 
 @singledispatch
@@ -123,7 +145,7 @@ def unpack_offer_reply(reply):
         raise ValueError('Unknown offer reply: "{}".'.format(data[0]))
     kind = data[0]
     args = data[1:]
-    # XXX more validation, does msgpack have specs?
+    # XXX could use more validation? does msgpack have schemas?
     return kinds[kind](*args)
 
 
@@ -242,18 +264,6 @@ class DilatedFileReceiver:
     def recv_data(self, data):
         """
         The peer has sent file data to us.
-        """
-
-    @m.input()
-    def data_finished(self):
-        """
-        All expected data is received
-        """
-
-    @m.input()
-    def subchannel_closed(self):
-        """
-        The subchannel has closed
         """
 
     @m.output()
@@ -409,12 +419,6 @@ class DilatedFileSender:
         """
 
     @m.input()
-    def data_finished(self):
-        """
-        There is no more data to send
-        """
-
-    @m.input()
     def subchannel_closed(self):
         """
         The subchannel has been closed
@@ -477,11 +481,11 @@ class DilatedFileSender:
         enter=sending,
         outputs=[_send_some_data],
     )
-    sending.upon(
-        data_finished,
-        enter=closing,
-        outputs=[_close_input_file, _close_subchannel, _notify_accepted],
-    )
+    # sending.upon(
+    #     data_finished,
+    #     enter=closing,
+    #     outputs=[_close_input_file, _close_subchannel, _notify_accepted],
+    # )
 
     closing.upon(
         subchannel_closed,
@@ -603,9 +607,23 @@ class DilatedFileTransfer(object):
         """
 
     @m.input()
+    def completed_send(self, sender):
+        """
+        An offer started by send_offer() has completed (`sender` is the
+        one gotten from send_offer)
+        """
+
+    @m.input()
     def offer_received(self):
         """
         The peer has made an offer to us (i.e. opened a subchannel).
+        """
+
+    @m.input()
+    def completed_receive(self, receiver):
+        """
+        An offer started by offer_received() has completed (`receiver` is
+        gotten from offer_received())
         """
 
     @m.input()
@@ -656,6 +674,15 @@ class DilatedFileTransfer(object):
         """
         Abandon any in-progress receives
         """
+
+    @m.output()
+    def _cleanup_receiver(self, receiver):
+        """
+        A particular receiver is done
+        """
+        # XXX rename subchannel_closed
+        receiver.subchannel_closed()
+        # self._receivers.remove(receiver)
 
     await_peer.upon(
         connected,
@@ -730,6 +757,11 @@ class DilatedFileTransfer(object):
         dilation_closed,
         enter=closed,
         outputs=[_cleanup_incoming],
+    )
+    receiving.upon(
+        completed_receive,
+        enter=receiving,
+        outputs=[_cleanup_receiver],
     )
 
     connect.upon(
@@ -913,10 +945,8 @@ def deferred_transfer(reactor, wormhole, on_error, maybe_code=None, offers=[]):
                 print("lost")
                 # differentiate between "ConnectionDone" and
                 # otherwise, probably: e.g. "finished" versus "error"?
-
-                #XXX only one of these two messages
-                #self._receiver.data_finished()
-                self._receiver.subchannel_closed()
+                ##self._receiver.subchannel_closed()
+                transfer.completed_receive(self._receiver)
 
             def dataReceived(self, data):
                 print("subchannel data", data[0], len(data))
@@ -944,7 +974,6 @@ def deferred_transfer(reactor, wormhole, on_error, maybe_code=None, offers=[]):
         factory = Factory.forProtocol(FileReceiverProtocol)
         listener = await endpoints.listen.listen(factory)
         print("LISTEN", listener)
-
 
         # this is the "send outstanding offers" part
         for offer in offers:
