@@ -9,7 +9,7 @@ from functools import singledispatch
 
 import msgpack
 
-from twisted.internet.defer import Deferred, ensureDeferred
+from twisted.internet.defer import Deferred, ensureDeferred, DeferredList
 from twisted.internet.protocol import Protocol, Factory
 from twisted.protocols.basic import FileSender
 from twisted.internet.interfaces import IPullProducer
@@ -17,6 +17,7 @@ from twisted.internet.interfaces import IPullProducer
 from zope.interface import implementer
 
 from .observer import OneShotObserver
+from .eventual import EventualQueue
 
 
 def get_appversion(mode=None, features=None, ask_permission=False):
@@ -508,7 +509,7 @@ class DilatedFileTransfer(object):
     _reactor: Any  # IReactor / EventualQueue .. what type do we really want?
 
     def __attrs_post_init__(self):
-        self._done = OneShotObserver(self._reactor)
+        self._done = OneShotObserver(EventualQueue(self._reactor))
         self._senders = dict()
 
     def when_done(self):
@@ -976,6 +977,7 @@ def deferred_transfer(reactor, wormhole, on_error, maybe_code=None, offers=[]):
         print("LISTEN", listener)
 
         # this is the "send outstanding offers" part
+        completed_after = list()
         for offer in offers:
             print("send offer", offer)
             sender = transfer.send_offer(offer)[0]
@@ -1005,15 +1007,26 @@ def deferred_transfer(reactor, wormhole, on_error, maybe_code=None, offers=[]):
                             def foo(arg):
                                 print("FOO: {}".format(arg))
                                 self.transport.loseConnection()
+                                self.factory.done.callback(None)
                             done.addCallbacks(foo)
 
             factory = Factory.forProtocol(FileSenderProtocol)
             factory.machine = sender
+            factory.done = Deferred()
+            completed_after.append(factory.done)
+
             subchannel = await endpoints.connect.connect(factory)
             print("sub", subchannel)
 
             thing = sender.begin_offer(offer)
             print(thing)
+
+        def all_done(arg):
+            print("ALL DONE", arg)
+            if offers:
+                transfer._done.fire(None)
+        print("after", completed_after)
+        DeferredList(completed_after).addCallbacks(all_done)
 
         # XXX hook up control_proto to callables that we can give to the state-machine (e.g. "send_control_message")
         # XXX hook up control_proto to state-machine (e.g. "got_control_message")
