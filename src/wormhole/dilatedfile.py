@@ -4,10 +4,17 @@
 
 from attr import define, field, Factory
 from automat import MethodicalMachine
-from typing import BinaryIO, List, Any
+from typing import BinaryIO, List, Any, Optional
+from functools import singledispatch
+
+import msgpack
 
 from twisted.internet.defer import Deferred, ensureDeferred
 from twisted.internet.protocol import Protocol, Factory
+from twisted.protocols.basic import FileSender
+from twisted.internet.interfaces import IPullProducer
+
+from zope.interface import implementer
 
 from .observer import OneShotObserver
 
@@ -50,29 +57,90 @@ def get_appversion(mode=None, features=None, ask_permission=False):
 @define
 class FileOffer:
     filename: str    # unicode relative pathname
-    timestamp: int   # Unix timestamp (seconds since the epoch in GMT)
     bytes: int       # total number of bytes in the file
-    _file: BinaryIO # file-like (how do we do typing protocols?)
-    kind: int = 0x01 # "file offer"
+    _file: Optional[BinaryIO] = None # file-like (how do we do typing protocols?)
 
 
 @define
 class DirectoryOffer:
-    base: str        # unicode relative pathname
-    timestamp: int   # Unix timestamp (seconds since the epoch in GMT)
-    bytes: int       # total number of bytes in all files
-    kind: int = 0x02 # "directoryoffer"
+    base: str         # unicode relative pathname
+    bytes: int        # total number of bytes in all files
+    files: list[str]  # names of all files relative to base
+
+
+def unpack_offer(offer):
+    kinds = {
+        "file-offer": FileOffer,
+        "directory-offer": DirectoryOffer,
+    }
+    data = msgpack.unpackb(offer)
+    if data[0] not in kinds.keys():
+        raise ValueError('Unknown offer: "{}".'.format(data[0]))
+    kind = data[0]
+    args = data[1:]
+    # XXX more validation, does msgpack have specs?
+    return kinds[kind](*args)
+
+
+@singledispatch
+def encode_offer(offer):
+    raise ValueError("Unknown offer type")
+
+@encode_offer.register
+def _(offer: FileOffer):
+    return b'\x01' + msgpack.packb([
+        "file-offer",
+        offer.filename,
+        offer.bytes,
+    ])
+
+@encode_offer.register
+def _(offer: DirectoryOffer):
+    return b'\x01' + msgpack.packb([
+        "directory-offer",
+        offer.base,
+        offer.files,
+    ])
 
 
 @define
 class OfferReject:
     reason: str      # unicode string describing why the offer is rejected
-    kind: int = 0x04 #  "offer reject"
 
 
 @define
 class OfferAccept:
-    kind: int = 0x03 #  "offer accpet"
+    pass
+
+
+def unpack_offer_reply(reply):
+    kinds = {
+        "offer-accept": OfferAccept,
+        "offer-reject": OfferReject,
+    }
+    data = msgpack.unpackb(reply)
+    if data[0] not in kinds.keys():
+        raise ValueError('Unknown offer reply: "{}".'.format(data[0]))
+    kind = data[0]
+    args = data[1:]
+    # XXX more validation, does msgpack have specs?
+    return kinds[kind](*args)
+
+
+@singledispatch
+def encode_offer_reply(offer):
+    raise ValueError("Unknown reply type")
+
+
+@encode_offer_reply.register
+def _(reply: OfferAccept):
+    return b'\x01' + msgpack.packb(["offer-accept"])
+
+
+@encode_offer_reply.register
+def _(reply: OfferReject):
+    return b'\x01' + msgpack.packb(["offer-reject", reply.reason])
+
 
 
 # control-channel messages
@@ -87,12 +155,15 @@ class Message:
 #    "done" message when closing (so the overall machine can clean up its
 #    "ongoing Offers" list)
 
-@define
+@define(slots=False)
 class DilatedFileReceiver:
     """
     Manages the receiving of a single FileOffer
     """
     m = MethodicalMachine()
+#   accept_offer: async callable ... well this should be in parent, right? we need a message out that says "ask your human?"
+#    _parent_machine: DilatedFileTransfer
+    _transfer_success: bool = False
 
     @m.state(initial=True)
     def start(self):
@@ -137,7 +208,7 @@ class DilatedFileReceiver:
         """
 
     @m.input()
-    def begin(self, subchannel):
+    def begin(self):
         """
         """
 
@@ -148,13 +219,13 @@ class DilatedFileReceiver:
         """
 
     @m.input()
-    def accept_offer(self, offer):
+    def accept_offer(self):
         """
         A decision to accept the offer
         """
 
     @m.input()
-    def reject_offer(self, offer):
+    def reject_offer(self):
         """
         A decision to reject the offer
         """
@@ -186,12 +257,6 @@ class DilatedFileReceiver:
         """
 
     @m.output()
-    def _remember_subchannel(self, subchannel):
-        self._subchannel = subchannel
-        # hook up "it closed" to .subchannel_closed
-        # hook up "got message" to .. something
-
-    @m.output()
     def _ask_about_offer(self, offer):
         """
         Use an async callback to ask if this offer should be accepted;
@@ -201,6 +266,7 @@ class DilatedFileReceiver:
 
     @m.output()
     def _send_accept(self):
+        # XXX shouldn't be doing IO here .. so all this could do is "return" some messages to send along ... which might be more "pure", but ... why not just send them (in the IO code, that already has it)
         pass
 
     @m.output()
@@ -215,11 +281,19 @@ class DilatedFileReceiver:
     @m.output()
     def _check_offer_integrity(self):
         print("done offer")
+        # if integration confirmed, set self._transfer_success
+
+    @m.output()
+    def _transfer_completed(self):
+        """
+        Tell the session state-machine this transfer is done
+        """
+        # send result of self._transfer_success to session state-machine
 
     start.upon(
         begin,
         enter=wait_offer,
-        outputs=[_remember_subchannel],
+        outputs=[],
     )
 
     wait_offer.upon(
@@ -247,21 +321,25 @@ class DilatedFileReceiver:
     receiving.upon(
         subchannel_closed,
         enter=closed,
-        outputs=[_check_offer_integrity],
+        outputs=[_check_offer_integrity, _transfer_completed],
     )
 
     closing.upon(
         subchannel_closed,
         enter=closed,
-        outputs=[],
+        outputs=[_transfer_completed],
     )
 
 
-@define
+@define(slots=False)
 class DilatedFileSender:
     """
     Manages the sending of a single file
     """
+#    _parent_machine: DilatedFileTransfer
+    _transfer_success: bool = False
+    _offer: FileOffer = None
+
     m = MethodicalMachine()
 
     @m.state(initial=True)
@@ -343,14 +421,9 @@ class DilatedFileSender:
         """
 
     @m.output()
-    def _remember_subchannel(self, subchannel):
-        self._subchannel = subchannel
-        # hook up "it closed" to .subchannel_closed
-        # hook up "got message" to .. something
-
-    @m.output()
     def _send_offer(self, offer):
         print("SEND", offer)
+        self._offer = offer
 
     @m.output()
     def _close_input_file(self):
@@ -385,7 +458,7 @@ class DilatedFileSender:
     start.upon(
         begin_offer,
         enter=permission,
-        outputs=[_send_offer],  # XXX why did we "_remember_subchannel" before?
+        outputs=[_send_offer],
     )
 
     permission.upon(
@@ -432,7 +505,7 @@ class DilatedFileTransfer(object):
 
     def __attrs_post_init__(self):
         self._done = OneShotObserver(self._reactor)
-
+        self._senders = dict()
 
     def when_done(self):
         return self._done.when_fired()
@@ -526,13 +599,13 @@ class DilatedFileTransfer(object):
     @m.input()
     def send_offer(self, offer):
         """
-        Make an offer to the other peer.
+        Create an offer machine.
         """
 
     @m.input()
-    def offer_received(self, offer):
+    def offer_received(self):
         """
-        The peer has made an offer to us.
+        The peer has made an offer to us (i.e. opened a subchannel).
         """
 
     @m.input()
@@ -542,20 +615,22 @@ class DilatedFileTransfer(object):
         """
 
     @m.output()
-    def _create_receiver(self, offer):
+    def _create_receiver(self):
         """
         Make a DilatedFileReceiver
         """
-        # make DilatedFileReceiver
-        # hook it up to its subchannel data (how? we need a loop in _this_ state-machine probably?)
+        fr = DilatedFileReceiver()
+        # self._receivers ... = fr
+        return fr
 
     @m.output()
     def _create_sender(self, offer):
         """
         Make a DilatedFileSender
         """
-        fs = DilatedFileSender()
-        fs.begin_offer(offer)
+        i = object()
+        fs = self._senders[i] = DilatedFileSender()
+        # keep track of this .. somehow? maybe we _do_ want "offer" as an arg?
         return fs
 
     @m.output()
@@ -680,6 +755,69 @@ class DilatedFileTransfer(object):
     )
 
 
+
+
+# basically FileSender from Twisted except with the correct kind of
+# producer, and it puts the right tag in the start of a message
+@implementer(IPullProducer)
+class SendUncompressedFile:
+    """
+    A producer that sends the contents of a file to a consumer.
+
+    Note that the magic-wormhole APIs become a little "weird" in that
+    they're message-based, but use the IStream* interfaces .. so like
+    'transport.write(...)' is really going to write a whole, framed
+    Data message ultimately ... and on the receive side,
+    dataReceived() will be called with that whole message (RIGHT???
+    triple-check plz...)
+    """
+
+    CHUNK_SIZE = 2**14
+
+    lastSent = ""
+    deferred = None
+
+    def beginFileTransfer(self, filelike, consumer):
+        """
+        Begin transferring a file
+
+        :param filelike: Any file-like object (to read data from)
+
+        :param consumer: any IConsumer to write data to (typically the subchannel transport)
+
+        :returns Deferred: triggered when the file has been completely
+            written to the consumer.
+        """
+        self._file = filelike
+        self._consumer = consumer
+
+        self._deferred = deferred = Deferred()
+        self._consumer.registerProducer(self, False)
+        return deferred
+
+    def resumeProducing(self):
+        chunk = ""
+        if self._file:
+            chunk = self._file.read(self.CHUNK_SIZE)
+        if not chunk:
+            self._file = None
+            self._consumer.unregisterProducer()
+            if self._deferred:
+                self._deferred.callback(None)
+                self._deferred = None
+            return
+        # XXX probably want a "compressed" one too, that writes 0x06-type frames?
+        self._consumer.write(b'\x05' + chunk)
+
+    def pauseProducing(self):
+        pass
+
+    def stopProducing(self):
+        if self._deferred:
+            self._deferred.errback(Exception("Consumer asked us to stop producing"))
+            self._deferred = None
+
+
 # wormhole: _DeferredWormhole,
 def deferred_transfer(reactor, wormhole, on_error, maybe_code=None, offers=[]):
     """
@@ -761,9 +899,91 @@ def deferred_transfer(reactor, wormhole, on_error, maybe_code=None, offers=[]):
         elif mode == "connect":
             transfer.peer_connect()
 
+        # this is "do stuff when a subchannel opens" part
+        class FileReceiverProtocol(Protocol):
+            _receiver = None
+
+            def connectionMade(self):
+                self._receiver = transfer.offer_received()[0]
+                print("subchannel open", self._receiver)
+                todo = self._receiver.begin()
+                print("todo", todo)
+
+            def connectionLost(self, reason):
+                print("lost")
+                # differentiate between "ConnectionDone" and
+                # otherwise, probably: e.g. "finished" versus "error"?
+
+                #XXX only one of these two messages
+                #self._receiver.data_finished()
+                self._receiver.subchannel_closed()
+
+            def dataReceived(self, data):
+                print("subchannel data", data[0], len(data))
+                if data[0] == 0x01:
+                    offer = unpack_offer(data[1:])
+                    print("OFFER", offer)
+                    todo = self._receiver.recv_offer(offer)
+                    print("TODO", todo)
+                    # now we ask our human ... and at some point
+                    # deliver .accept_offer() or .reject_offer() to
+                    # the machine
+                    print("reply")
+                    reply = OfferAccept()
+                    todo = self._receiver.accept_offer()  # XXX some of these "offer" args can go away
+                    print("todo", todo)
+                    self.transport.write(encode_offer_reply(reply))
+                    # now the sender will start streaming data and we write it out ...
+                elif data[0] == 0x05:
+                    print("Raw file bytes.")
+                    assert self._receiver is not None, "data before header"
+                    self._receiver.recv_data(data[1:])
+                else:
+                    raise RuntimeError("Unknown frame kind: {}".format(data[0]))
+
+        factory = Factory.forProtocol(FileReceiverProtocol)
+        listener = await endpoints.listen.listen(factory)
+        print("LISTEN", listener)
+
+
+        # this is the "send outstanding offers" part
         for offer in offers:
             print("send offer", offer)
-            thing = transfer.send_offer(offer)
+            sender = transfer.send_offer(offer)[0]
+
+            class FileSenderProtocol(Protocol):
+                def connectionMade(self):
+                    print("connection", self.factory.machine)
+                    ##for msg in self.factory.machine.begin_offer(offer):
+                    ## or just:
+                    self.transport.write(encode_offer(offer))
+
+                def dataReceived(self, data):
+                    print("sender data", data)
+                    if data[0] == 0x01:
+                        reply = unpack_offer_reply(data[1:])
+                        print(reply)
+                        if isinstance(reply, OfferReject):
+                            print("REJECT", reply.message)
+                            self.transport.disconnect()
+                        elif isinstance(reply, OfferAccept):
+                            print("ACCEPT!")
+                            # Producer/Consumer-write all available
+                            # data ... but frame each Data with a kind
+                            filesend = SendUncompressedFile()
+                            done = filesend.beginFileTransfer(offer._file, self.transport)
+
+                            def foo(arg):
+                                print("FOO: {}".format(arg))
+                                self.transport.loseConnection()
+                            done.addCallbacks(foo)
+
+            factory = Factory.forProtocol(FileSenderProtocol)
+            factory.machine = sender
+            subchannel = await endpoints.connect.connect(factory)
+            print("sub", subchannel)
+
+            thing = sender.begin_offer(offer)
             print(thing)
 
         # XXX hook up control_proto to callables that we can give to the state-machine (e.g. "send_control_message")

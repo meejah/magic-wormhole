@@ -194,6 +194,9 @@ class _DeferredWormhole(object):
         return derive_key(self._key, to_bytes(purpose), length)
 
     def dilate(self, transit_relay_location=None, no_listen=False):
+        """
+        :return EndpointRecord: the three endpoints control, connect, listen
+        """
         if not self._enable_dilate:
             raise NotImplementedError
         return self._boss.dilate(transit_relay_location, no_listen)  # fires with (endpoints)

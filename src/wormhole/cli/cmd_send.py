@@ -352,7 +352,7 @@ class Sender:
             stat = os.stat(what)
             return FileOffer(
                 basename,
-                stat.st_mtime,
+##                stat.st_mtime,
                 stat.st_size,
                 open(what, "rb"),
             )
