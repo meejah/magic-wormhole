@@ -189,12 +189,6 @@ class DilatedFileReceiver:
     _transfer_success: bool = False
 
     @m.state(initial=True)
-    def start(self):
-        """
-        Initial state
-        """
-
-    @m.state()
     def wait_offer(self):
         """
         Waiting for the offer message
@@ -228,11 +222,6 @@ class DilatedFileReceiver:
     def closed(self):
         """
         Completed operation.
-        """
-
-    @m.input()
-    def begin(self):
-        """
         """
 
     @m.input()
@@ -300,12 +289,6 @@ class DilatedFileReceiver:
         Tell the session state-machine this transfer is done
         """
         # send result of self._transfer_success to session state-machine
-
-    start.upon(
-        begin,
-        enter=wait_offer,
-        outputs=[],
-    )
 
     wait_offer.upon(
         recv_offer,
@@ -939,8 +922,6 @@ def deferred_transfer(reactor, wormhole, on_error, maybe_code=None, offers=[]):
             def connectionMade(self):
                 self._receiver = transfer.offer_received()[0]
                 print("subchannel open", self._receiver)
-                todo = self._receiver.begin()
-                print("todo", todo)
 
             def connectionLost(self, reason):
                 print("lost")
