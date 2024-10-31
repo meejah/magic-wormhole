@@ -204,6 +204,7 @@ class _SortedKey(object):
         self._B.got_key(key)
         phase = "version"
         data_key = derive_phase_key(key, self._side, phase)
+        print("key", data_key)
         plaintext = dict_to_bytes(self._versions)
         encrypted = encrypt_data(data_key, plaintext)
         self._M.add_message(phase, encrypted)

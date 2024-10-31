@@ -26,6 +26,9 @@ from .errors import (LonelyError, OnlyOneCodeError, ServerError, WelcomeError,
 from .util import bytes_to_dict, provides
 
 
+## circular from .wormhole import Seed  # XXX 
+
+
 @attrs
 @implementer(_interfaces.IBoss)
 class Boss(object):
@@ -41,6 +44,7 @@ class Boss(object):
     _journal = attrib(validator=provides(_interfaces.IJournal))
     _tor = attrib(validator=optional(provides(_interfaces.ITorManager)))
     _timing = attrib(validator=provides(_interfaces.ITiming))
+    _seed = attrib()##validator=instance_of(Seed))
     m = MethodicalMachine()
     set_trace = getattr(m, "_setTrace",
                         lambda self, f: None)  # pragma: no cover
@@ -50,6 +54,9 @@ class Boss(object):
         self._init_other_state()
 
     def _build_workers(self):
+        from .wormhole import GrowableSeed
+        if self._seed is not None and isinstance(self._seed, GrowableSeed):
+            self._side = self._seed.side
         self._N = Nameplate()
         self._M = Mailbox(self._side)
         self._S = Send(self._side, self._timing)
@@ -158,6 +165,10 @@ class Boss(object):
         pass  # pragma: no cover
 
     @m.state()
+    def S1_growing(self):
+        pass  # pragma: no cover
+
+    @m.state()
     def S2_happy(self):
         pass  # pragma: no cover
 
@@ -232,11 +243,17 @@ class Boss(object):
             # middle of processing the rx_welcome input, and I wasn't sure
             # Automat would handle that correctly.
             self._W.got_welcome(welcome)  # TODO: let this raise WelcomeError?
+            print("GOTWELCOME", welcome)
+            self._got_welcome(welcome)
         except WelcomeError as welcome_error:
             self.rx_unwelcome(welcome_error)
 
     @m.input()
     def rx_unwelcome(self, welcome_error):
+        pass
+
+    @m.input()
+    def _got_welcome(self, welcome):
         pass
 
     @m.input()
@@ -251,6 +268,13 @@ class Boss(object):
     @m.input()
     def got_code(self, code):
         pass
+
+    #XXX
+    @m.input()
+    def got_seed(self, seed):
+        """
+        :param GrowableSeed seed: the Seed to re-grow
+        """
 
     # Key sends (got_key, scared)
     # Receive sends (got_message, happy, got_verifier, scared)
@@ -307,14 +331,54 @@ class Boss(object):
         self._W.got_code(code)
 
     @m.output()
+    def water_seed(self):
+        """
+        :param GrowableSeed seed:
+        """
+        assert self._seed is not None, "can't water a seed we don't have"
+        #self._seed = seed
+        import base64
+        mailbox_id = base64.b32encode(self._seed.mailbox_id).lower().strip(b"=").decode("ascii")
+        seekrit = base64.b32encode(self._seed.pake_secret).lower().strip(b"=").decode("ascii")
+        self._M.got_mailbox(mailbox_id)
+        ###XXX not required self._T.nameplate_done()
+        # we're using a "full strength" secret here to do a PAKE
+        # transaction, could be considered overkill but simple (and
+        # doesn't change the protocol's security argument)
+        #####XXXX can we do this "conditionally" upon whatever we get
+        #####from the server? i.e. if it _replays_ our last PAKE, can
+        #####we re-create it from just our pake_secret? (probably
+        #####... not, there's randomness no?)
+
+        #
+        if True:
+            print("WATERING SEED")
+            # kkk ... so can we avoid "blindly doing this"?
+            ##self._K._SK.got_code(seekrit)
+            self._K.got_code(seekrit)
+        else:
+            ##self._reactor.callLater(5, self._M.close, "seed-reuse")
+            print("explicit close")
+            self._M.close("seed-reuse")
+        ##self._N.using_seed()  ## or something? meaning "there was never a nameplate, go to don"
+
+    @m.output()
+    def _grow_got_phase(self, phase, plaintext):
+        print("GROW", phase, plaintext)
+
+    @m.output()
     def process_version(self, plaintext):
         # most of this is wormhole-to-wormhole, ignored for now
         # in the future, this is how Dilation is signalled
+        print("HIHI", plaintext)
         self._their_versions = bytes_to_dict(plaintext)
         self._D.got_wormhole_versions(self._their_versions)
         # but this part is app-to-app
         app_versions = self._their_versions.get("app_versions", {})
         self._W.got_versions(app_versions)
+        from .wormhole import GrowableSeed
+#        if isinstance(self._seed, GrowableSeed):
+#            self._M.
 
     @m.output()
     def S_send(self, plaintext):
@@ -331,6 +395,7 @@ class Boss(object):
 
     @m.output()
     def close_error(self, errmsg, orig):
+        print("ERR", errmsg)
         self._result = ServerError(errmsg)
         self._T.close("errory")
 
@@ -382,7 +447,15 @@ class Boss(object):
 
     @m.output()
     def W_close_with_error(self, err):
+        print("HIHI", err)
         self._result = err  # exception
+        self._W.closed(self._result)
+
+    @m.output()
+    def W_close_rx_error(self, errmsg, orig):
+        print("HIHIhi", errmsg, orig)
+        from .errors import WormholeClosed
+        self._result = WormholeClosed(errmsg)
         self._W.closed(self._result)
 
     @m.output()
@@ -394,7 +467,8 @@ class Boss(object):
     S0_empty.upon(send, enter=S0_empty, outputs=[S_send])
     S0_empty.upon(rx_unwelcome, enter=S3_closing, outputs=[close_unwelcome])
     S0_empty.upon(got_code, enter=S1_lonely, outputs=[do_got_code])
-    S0_empty.upon(rx_error, enter=S3_closing, outputs=[close_error])
+    S0_empty.upon(got_seed, enter=S1_growing, outputs=[])
+    S0_empty.upon(rx_error, enter=S3_closing, outputs=[W_close_rx_error])
     S0_empty.upon(error, enter=S4_closed, outputs=[W_close_with_error])
 
     S1_lonely.upon(rx_unwelcome, enter=S3_closing, outputs=[close_unwelcome])
@@ -403,8 +477,20 @@ class Boss(object):
     S1_lonely.upon(close, enter=S3_closing, outputs=[close_lonely])
     S1_lonely.upon(send, enter=S1_lonely, outputs=[S_send])
     S1_lonely.upon(got_key, enter=S1_lonely, outputs=[W_got_key, D_got_key])
-    S1_lonely.upon(rx_error, enter=S3_closing, outputs=[close_error])
+    S1_lonely.upon(rx_error, enter=S3_closing, outputs=[W_close_rx_error])
     S1_lonely.upon(error, enter=S4_closed, outputs=[W_close_with_error])
+## or something like this    S1_lonely.upeon(got_code, enter=S3_closing, outputs=[W_close_with_error])
+
+    S1_growing.upon(rx_unwelcome, enter=S3_closing, outputs=[close_unwelcome])
+    S1_growing.upon(_got_phase, enter=S1_growing, outputs=[_grow_got_phase])
+    S1_growing.upon(_got_welcome, enter=S1_growing, outputs=[water_seed])
+    S1_growing.upon(happy, enter=S2_happy, outputs=[])
+    S1_growing.upon(scared, enter=S3_closing, outputs=[close_scared])
+    S1_growing.upon(close, enter=S3_closing, outputs=[close_lonely])
+    S1_growing.upon(send, enter=S1_growing, outputs=[S_send])
+    S1_growing.upon(got_key, enter=S1_growing, outputs=[W_got_key, D_got_key])
+    S1_growing.upon(rx_error, enter=S3_closing, outputs=[W_close_rx_error])
+    S1_growing.upon(error, enter=S4_closed, outputs=[W_close_with_error])
 
     S2_happy.upon(rx_unwelcome, enter=S3_closing, outputs=[close_unwelcome])
     S2_happy.upon(got_verifier, enter=S2_happy, outputs=[W_got_verifier])

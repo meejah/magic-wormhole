@@ -83,7 +83,11 @@ class Mailbox(object):
     # from Nameplate
     @m.input()
     def got_mailbox(self, mailbox):
-        pass
+        """
+        :param str mailbox: base32-encoded mailbox id. Look like that is
+            "8 bytes urandom" from the server currently (??? thought they
+            should be 256?)
+        """
 
     # from RendezvousConnector
     @m.input()
@@ -157,6 +161,7 @@ class Mailbox(object):
 
     @m.output()
     def N_release_and_accept(self, side, phase, body):
+        print("them", side, phase, body)
         self._N.release()
         if phase not in self._processed:
             self._processed.add(phase)
@@ -172,6 +177,7 @@ class Mailbox(object):
 
     @m.output()
     def dequeue(self, phase, body):
+        print(phase, body, sorted(self._pending_outbound.keys()))
         self._pending_outbound.pop(phase, None)
 
     @m.output()

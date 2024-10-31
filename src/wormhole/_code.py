@@ -97,6 +97,7 @@ class Code(object):
 
     @m.output()
     def do_middle_input(self, nameplate):
+        print("SET", nameplate)
         self._N.set_nameplate(nameplate)
 
     @m.output()

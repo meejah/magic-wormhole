@@ -173,6 +173,7 @@ class Manager(object):
         self._dilation_key = key
 
     def got_wormhole_versions(self, their_wormhole_versions):
+        print("got_wormhole_versions", their_wormhole_versions)
         # this always happens before received_dilation_message
         self._dilation_version = None
         their_dilation_versions = set(their_wormhole_versions.get("can-dilate", []))

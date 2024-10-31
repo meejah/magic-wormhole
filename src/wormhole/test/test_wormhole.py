@@ -578,6 +578,32 @@ class Wormholes(ServerBase, unittest.TestCase):
         yield w1.close()
         yield w2.close()
 
+    @inlineCallbacks
+    def test_seed(self):
+        mailbox_id = urandom(128/8)
+        seekrit = urandom(256/8)
+        seed0 = wormhole.GrowableSeed(
+            mailbox_id,
+            seekrit,
+            urandom(8),  # side
+        )
+        seed1 = wormhole.GrowableSeed(
+            mailbox_id,
+            seekrit,
+            urandom(8),  # side
+        )
+        w1 = wormhole.create(APPID, self.relayurl, reactor, seed=seed0)
+        w2 = wormhole.create(APPID, self.relayurl, reactor, seed=seed1)
+        w1.set_code("123-purple-elephant")
+        w2.set_code("123-purple-elephant")
+        w1.send_message(b"data1"), w2.send_message(b"data2")
+        dl = yield self.doBoth(w1.get_message(), w2.get_message())
+        (dataX, dataY) = dl
+        self.assertEqual(dataX, b"data2")
+        self.assertEqual(dataY, b"data1")
+        yield w1.close()
+        yield w2.close()
+
 
 class MessageDoubler(_rendezvous.RendezvousConnector):
     # we could double messages on the sending side, but a future server will

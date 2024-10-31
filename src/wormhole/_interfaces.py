@@ -293,6 +293,14 @@ class IDeferredWormhole(Interface):
         :rtype: ``Deferred[bytes]``
         """
 
+    def get_seed():
+        """
+        Get the Seed for this wormhole, if available. `None` is returned
+        if no Seed is available.
+
+        A Seed will only be avilable if both sides requested it.
+        """
+
     def close():
         """
         Close the wormhole.

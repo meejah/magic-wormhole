@@ -1,7 +1,8 @@
 import os
 import sys
+import base64
 
-from attr import attrib, attrs
+from attr import attrib, attrs, frozen
 from twisted.python import failure
 from twisted.internet.task import Cooperator
 from zope.interface import implementer
@@ -127,6 +128,7 @@ class _DeferredWormhole(object):
         self._reactor = reactor
         self._welcome_observer = OneShotObserver(eq)
         self._code_observer = OneShotObserver(eq)
+        self._seed_observer = OneShotObserver(eq)
         self._key = None
         self._key_observer = OneShotObserver(eq)
         self._verifier_observer = OneShotObserver(eq)
@@ -148,6 +150,9 @@ class _DeferredWormhole(object):
         # ordering would make it easier to cause programming errors that
         # forget to trigger it entirely.
         return self._code_observer.when_fired()
+
+    def get_seed(self):
+        return self._seed_observer.when_fired()
 
     def get_welcome(self):
         return self._welcome_observer.when_fired()
@@ -218,6 +223,9 @@ class _DeferredWormhole(object):
     def got_code(self, code):
         self._code_observer.fire_if_not_fired(code)
 
+    def created_seed(self, seed):
+        self._seed_observer.fire_if_not_fired(seed)
+
     def got_key(self, key):
         self._key = key  # for derive_key()
         self._key_observer.fire_if_not_fired(key)
@@ -227,6 +235,17 @@ class _DeferredWormhole(object):
 
     def got_versions(self, versions):
         self._version_observer.fire_if_not_fired(versions)
+
+        # we've definitely "got_key" by now right?
+        if self._boss._their_versions.get("seed", None) is not None:
+            print("Seeds!")
+            self._my_seed = GrowableSeed(
+                self.derive_key("seed-mailbox-id", 16),
+                self.derive_key("seed-pake-secret", 32),
+                self._boss._side,
+            )
+            print("SEED", self._my_seed)
+            self.created_seed(self._my_seed)
 
     def received(self, plaintext):
         self._received_observer.fire(plaintext)
@@ -252,6 +271,64 @@ class _DeferredWormhole(object):
         self._received_observer.fire(f)
 
 
+class Seed:
+    """
+    base
+    """
+
+
+@frozen
+class GrowableSeed(Seed):
+    """
+    Actually contains data
+    """
+    # 8 bytes in server code -- but SEEDS could choose to use more,
+    # they're just strings on the server ... so I guess go for 16 or
+    # 32 bytes here probably
+    mailbox_id: bytes
+    pake_secret: bytes
+    side: bytes
+
+    def to_json(self):
+        """
+        Convert to a JSON-able dict
+        """
+        def encode_bytes(b):
+            return base64.b32encode(b).lower().strip(b"=").decode("ascii")
+
+        return {
+            "mailbox-id": encode_bytes(self.mailbox_id),
+            "pake-secret": encode_bytes(self.pake_secret),
+            "side": encode_bytes(self.side),
+        }
+
+    @classmethod
+    def from_json(cls, data):
+        missing = set(data.keys()) - {"mailbox-id", "pake-secret", "side"}
+        def decode_bytes(s):
+            return base64.b32decode(s, casefold=True)
+        if missing:
+            raise ValueError(
+                "Missing attributes: {}".format(", ".join(missing))
+            )
+        return cls(
+            decode_bytes(data["mailbox-id"] + "===="),
+            decode_bytes(data["pake-secret"] + "===="),
+            decode_bytes(data["side"] + "==="),
+        )
+
+
+
+class FutureSeed(Seed):
+    """
+    We would _like_ to have a Seed, but this isn't it yet
+    """
+
+
+# idea being you pass seed=FutureSeed() to ask for one, or
+# seed=GrowableSeed() for one we already have
+
+
 def create(
         appid,
         relay_url,
@@ -263,7 +340,58 @@ def create(
         timing=None,
         stderr=sys.stderr,
         _eventual_queue=None,
-        _enable_dilate=False):
+        _enable_dilate=False,
+        seed=None):
+    """
+    Create a fresh Wormhole connection.
+
+    :param appid: a free-form, unique string identifying an
+        application. All nameplates and mailboxes are bound to a
+        particular appid (and cannot communicate with devices using a
+        different appid). SHOULD make them URL-like,
+        e.g. "lothar.com/wormhole/text-or-file-xfer"
+
+    :param relay_url: the WebSocket URI to reach the Mailbox Server
+
+    :param reactor: the Twisted reactor to use
+
+    :param dict versions: the JSON-able dictionary of arbitrary values
+        to send as "app_versions" to the other side. This allows
+        application-level protocols to send some preliminary information.
+
+    :param delegate: if not `None`, an implementation of
+        IWormholeDelegate; the returned wormhole object will be a
+        "delegated wormhole". Otherwise, it will be a "deferred wormhole".
+
+    :param journal: XXX
+
+    :param ITorManager tor: if not `None`, use the Tor network via this provided
+        `ITorManager` instance
+
+    :param timing: debugging
+
+    :param stderr: the writable file-like object to send error messages too (`sys.stderr` by default)
+
+    :param _eventual_queue: for tests
+
+    :param _enable_dilate: if True, enable the Dilation protocol
+
+
+### XXX seed param needs to be something else; or maybe two params?
+### like "want to save a seed plz" and/or "want to use such-and-such a
+### seed (if we have it?")  or is that knowledge all put into the
+### higher-level, and so here GrowableSeed always means "use this one"
+### versus FutureSeed always means "create a new one"
+
+    :param Seed seed: if not `None`, request Seeds (allowing
+        `.get_seed()` to work on this side). The peer must also
+        request a Seed for this to actually work for re-creating the
+        connection. If given a GrowableSeed, it will be used to
+        "re-grow" the connection (provided the other side does the
+        same thing, and had the same shared Seed). In both cases,
+        get_seed() will return a GrowableSeed (or an error if the
+        FutureSeed never becomes a proper GrowableSeed).
+    """
     timing = timing or DebugTiming()
     side = bytes_to_hexstr(os.urandom(5))
     journal = journal or ImmediateJournal()
@@ -280,15 +408,24 @@ def create(
     }
     if not _enable_dilate:
         wormhole_versions = {}  # don't advertise Dilation yet: not ready
+
+    if seed is not None:
+        # XXX note, versions is PLAINTEXT, do not reveal secret information!
+        wormhole_versions["seed"] = {
+            "seed-capabilities": ["core"],
+        }
+
     wormhole_versions["app_versions"] = versions  # app-specific capabilities
     v = __version__
     if isinstance(v, type(b"")):
         v = v.decode("utf-8", errors="replace")
     client_version = ("python", v)
     b = Boss(w, side, relay_url, appid, wormhole_versions, client_version,
-             reactor, eq, cooperator, journal, tor, timing)
+             reactor, eq, cooperator, journal, tor, timing, seed)
     w._set_boss(b)
     b.start()
+    if seed is not None and isinstance(seed, GrowableSeed):
+        b.got_seed(seed)
     return w
 
 

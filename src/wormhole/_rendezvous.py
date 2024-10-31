@@ -123,20 +123,25 @@ class RendezvousConnector(object):
 
     # from Mailbox
     def tx_claim(self, nameplate):
+        print("CLAIM", nameplate)
         self._tx("claim", nameplate=nameplate)
 
     def tx_open(self, mailbox):
+        print("OPEN", mailbox)
         self._tx("open", mailbox=mailbox)
 
     def tx_add(self, phase, body):
+        print("ADD", phase, body)
         assert isinstance(phase, type("")), type(phase)
         assert isinstance(body, type(b"")), type(body)
         self._tx("add", phase=phase, body=bytes_to_hexstr(body))
 
     def tx_release(self, nameplate):
+        print("RELEASE")
         self._tx("release", nameplate=nameplate)
 
     def tx_close(self, mailbox, mood):
+        print("CLOSE")
         self._tx("close", mailbox=mailbox, mood=mood)
 
     def stop(self):
@@ -155,6 +160,7 @@ class RendezvousConnector(object):
 
     # from Code
     def tx_allocate(self):
+        print("ALLOCATE")
         self._tx("allocate")
 
     # from our ClientService
@@ -174,6 +180,7 @@ class RendezvousConnector(object):
         self._have_made_a_successful_connection = True
         self._ws = proto
         try:
+            print("BIND", self._appid, self._side)
             self._tx(
                 "bind",
                 appid=self._appid,
@@ -201,6 +208,8 @@ class RendezvousConnector(object):
         if self._debug_record_inbound_f:
             self._debug_record_inbound_f(msg)
         mtype = msg["type"]
+        # XXX DANGER! better check if it's allowed, we're calling
+        # methods constucted with this name!
         meth = getattr(self, "_response_handle_" + mtype, None)
         if not meth:
             # make tests fail, but real application will ignore it

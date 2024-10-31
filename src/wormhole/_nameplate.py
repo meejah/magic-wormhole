@@ -147,6 +147,10 @@ class Nameplate(object):
 
     @m.output()
     def M_got_mailbox(self, mailbox):
+        """
+        :param str mailbox: hex?-encoded mailbox from server (CLAIMED)
+        """
+        #XXX generate: base64.b32encode(os.urandom(8)).lower().strip(b"=").decode("ascii")
         self._M.got_mailbox(mailbox)
 
     @m.output()
@@ -165,6 +169,7 @@ class Nameplate(object):
         _set_nameplate, enter=S2B, outputs=[record_nameplate_and_RC_tx_claim])
     S0B.upon(lost, enter=S0A, outputs=[])
     S0B.upon(close, enter=S5A, outputs=[T_nameplate_done])
+    S0B.upon(release, enter=S5A, outputs=[T_nameplate_done])
 
     S1A.upon(connected, enter=S2B, outputs=[RC_tx_claim])
     S1A.upon(close, enter=S5A, outputs=[T_nameplate_done])
