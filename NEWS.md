@@ -2,7 +2,22 @@ User-visible changes in "magic-wormhole":
 
 ## Upcoming Release
 
-* add release-notes here when making PRs
+* Bump magic-wormhole-transit-relay to 0.3.1 for testing, and fix (#543)
+* (add release-notes here when making PRs)
+
+
+## Release 0.16.0 (3-Oct-2024)
+
+* Updated to python-spake2 version 0.9
+* Removed more Python2-isms
+
+
+## Release 0.15.0 (7-Aug-2024)
+
+* Incorporate attrs' zope-interface support (#492, #527, from https://github.com/meejah)
+* Add "codespell" to correct spelling (#526, from https://github.com/yarikoptic)
+* Fix bash completions (#525, from https://github.com/RobertoD91)
+* run tests properly when Noise is not installed (#522, from https://github.com/anarcat)
 
 
 ## Release 0.14.0 (28-Mar-2024)
@@ -624,7 +639,7 @@ import wormhole must be updated.
 ## Release 0.3.0 (24-Jun-2015)
 
 Add preliminary Twisted support, only for symmetric endpoints (no
-initator/receiver distinction). Lacks code-entry tab-completion. May still
+initiator/receiver distinction). Lacks code-entry tab-completion. May still
 leave timers lingering. Add test suite (only for Twisted, so far).
 
 Use a sqlite database for Relay server state, to survive reboots with less

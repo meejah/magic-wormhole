@@ -44,7 +44,7 @@ setup(name="magic-wormhole",
           ]
       },
       install_requires=[
-          "spake2==0.8", "pynacl",
+          "spake2==0.9", "pynacl",
           "attrs >= 19.2.0", # 19.2.0 replaces cmp parameter with eq/order
           "twisted[tls] >= 17.5.0", # 17.5.0 adds failAfterFailures=
           "autobahn[twisted] >= 0.14.1",
@@ -60,7 +60,7 @@ setup(name="magic-wormhole",
       extras_require={
           ':sys_platform=="win32"': ["pywin32"],
           "dev": ["tox", "pyflakes",
-                  "magic-wormhole-transit-relay==0.1.2",
+                  "magic-wormhole-transit-relay==0.3.1",
                   "magic-wormhole-mailbox-server==0.3.1"],
           "dilate": ["noiseprotocol"],
           "build": ["twine", "dulwich", "readme_renderer", "gpg", "wheel"],
