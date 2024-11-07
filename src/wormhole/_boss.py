@@ -465,6 +465,7 @@ class Boss(object):
 
     S0_empty.upon(close, enter=S3_closing, outputs=[close_lonely])
     S0_empty.upon(send, enter=S0_empty, outputs=[S_send])
+    S0_empty.upon(_got_welcome, enter=S0_empty, outputs=[])
     S0_empty.upon(rx_unwelcome, enter=S3_closing, outputs=[close_unwelcome])
     S0_empty.upon(got_code, enter=S1_lonely, outputs=[do_got_code])
     S0_empty.upon(got_seed, enter=S1_growing, outputs=[])
