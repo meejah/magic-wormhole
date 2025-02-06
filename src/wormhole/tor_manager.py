@@ -1,10 +1,8 @@
-from __future__ import print_function, unicode_literals
-
 import math
 import sys
 
 from attr import attrib, attrs
-from twisted.internet.defer import inlineCallbacks, returnValue
+from twisted.internet.defer import inlineCallbacks
 from twisted.internet.endpoints import clientFromString
 from zope.interface.declarations import directlyProvides
 
@@ -123,4 +121,4 @@ def get_tor(reactor,
                     file=stderr)
                 tor = SocksOnlyTor(reactor)
     directlyProvides(tor, _interfaces.ITorManager)
-    returnValue(tor)
+    return tor

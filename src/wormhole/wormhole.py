@@ -1,5 +1,3 @@
-from __future__ import absolute_import, print_function, unicode_literals
-
 import os
 import sys
 
@@ -199,7 +197,7 @@ class _DeferredWormhole(object):
         """
         if not self._enable_dilate:
             raise NotImplementedError
-        return self._boss.dilate(transit_relay_location, no_listen)  # fires with (endpoints)
+        return self._boss.dilate(transit_relay_location, no_listen)  # returns endpoints
 
     def close(self):
         # fails with WormholeError unless we established a connection

@@ -271,6 +271,10 @@ def help(context, **kwargs):
         "any of: B,N,M,S,O,K,SK,R,RC,L,C,T"
     )
 )
+@click.option(
+    "--qr/--no-qr",
+    default=True,
+    help="Generate and show ASCII-based QR code.")
 @click.argument("what", required=False, type=click.Path(path_type=type(u"")))
 @click.pass_obj
 def send(cfg, **kwargs):
@@ -305,6 +309,7 @@ def go(f, cfg):
 @click.option(
     "--accept-file",
     is_flag=True,
+    envvar="WORMHOLE_ACCEPT_FILE",
     help="accept file transfer without asking for confirmation",
 )
 @click.option(

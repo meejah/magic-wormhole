@@ -1,7 +1,7 @@
 import re
 
 from attr import attrib, attrs
-from attr.validators import instance_of, optional, provides
+from attr.validators import instance_of, optional
 from automat import MethodicalMachine
 from twisted.python import log
 from zope.interface import implementer
@@ -23,7 +23,7 @@ from ._terminator import Terminator
 from ._wordlist import PGPWordList
 from .errors import (LonelyError, OnlyOneCodeError, ServerError, WelcomeError,
                      WrongPasswordError, _UnknownPhaseError)
-from .util import bytes_to_dict
+from .util import bytes_to_dict, provides
 
 
 @attrs
@@ -206,8 +206,7 @@ class Boss(object):
     # "async def can_dilate" then we could decide things based on
     # "supports dilation, or not"
     def dilate(self, transit_relay_location=None, no_listen=False):
-        # fires with endpoints
-        return self._D.dilate(transit_relay_location, no_listen=no_listen)
+        return self._D.dilate(transit_relay_location, no_listen=no_listen)  # returns endpoints
 
     @m.input()
     def send(self, plaintext):
