@@ -195,12 +195,10 @@ class TrafficTimer(object):
 
     @m.output()
     def signal_reconnect(self):
-        print("signal reconnect")
         self.on_reconnect()
 
     @m.output()
     def begin_timing(self):
-        print("begin timing")
         self.start_timer()
 
     no_connection.upon(
@@ -680,7 +678,6 @@ class Manager(object):
 
     @m.output()
     def send_please(self):
-        print("send please")
         msg = {
             "type": "please",
             "side": self._my_side,
@@ -693,13 +690,11 @@ class Manager(object):
     def choose_role(self, message):
         their_side = message["side"]
         if self._my_side > their_side:
-            print("i am leader")
             self._my_role = LEADER
             # scid 0 is reserved for the control channel. the leader uses odd
             # numbers starting with 1
             self._next_subchannel_id = 1
         elif their_side > self._my_side:
-            print("i am follower")
             self._my_role = FOLLOWER
             # the follower uses even numbers starting with 2
             self._next_subchannel_id = 2
@@ -710,25 +705,11 @@ class Manager(object):
 
     @m.output()
     def start_connecting_ignore_message(self, message):
-        self._maybe_send_status(
-            evolve(
-                self._latest_status,
-                peer_connection = ConnectingPeer(),
-            )
-        )
-        print("start connecting, ignore message")
         del message  # ignored
         return self._start_connecting()
 
     @m.output()
     def start_connecting(self):
-        self._maybe_send_status(
-            evolve(
-                self._latest_status,
-                peer_connection = ConnectingPeer(),
-            )
-        )
-        print("start connecting")
         self._start_connecting()
 
     def _start_connecting(self):
@@ -751,17 +732,14 @@ class Manager(object):
 
     @m.output()
     def send_reconnect(self):
-        print("reconect")
         self.send_dilation_phase(type="reconnect")  # TODO: generation number?
 
     @m.output()
     def send_reconnecting(self):
-        print("reconnecting")
         self.send_dilation_phase(type="reconnecting")  # TODO: generation?
 
     @m.output()
     def use_hints(self, hint_message):
-        print("use hints", hint_message)
         hint_objs = filter(lambda h: h,  # ignore None, unrecognizable
                            [parse_hint(hs) for hs in hint_message["hints"]])
         hint_objs = list(hint_objs)
@@ -769,25 +747,20 @@ class Manager(object):
 
     @m.output()
     def stop_connecting(self):
-        print("stop connecting")
-        ###XXX self._maybe_send_status()
         self._connector.stop()
 
     @m.output()
     def abandon_connection(self):
-        print("abandon connection")
         # we think we're still connected, but the Leader disagrees. Or we've
         # been told to shut down.
         self._connection.disconnect()  # let connection_lost do cleanup
 
     @m.output()
     def notify_stopped(self):
-        print("notify stopped")
         self._stopped.fire(None)
 
     @m.output()
     def send_status_connecting(self):
-        print("status: connecting")
         self._maybe_send_status(
             evolve(
                 self._latest_status,
@@ -797,7 +770,6 @@ class Manager(object):
 
     @m.output()
     def send_status_reconnecting(self):
-        print("status: reconnecting")
         self._maybe_send_status(
             evolve(
                 self._latest_status,
@@ -811,7 +783,6 @@ class Manager(object):
         # send_dilation_phase has just run recently, incrementing
         # this; "current status" is thus the prior value
         dilation_phase = self._next_dilation_phase - 1
-        print(f"status: dilation phase {dilation_phase}")
         self._maybe_send_status(
             evolve(
                 self._latest_status,
@@ -820,7 +791,6 @@ class Manager(object):
         )
     @m.output()
     def send_status_stopped(self):
-        print("status: stopped")
         self._maybe_send_status(
             evolve(
                 self._latest_status,
@@ -975,7 +945,6 @@ class Dilator(object):
             self._pending_dilation_key = dilation_key
 
     def got_wormhole_versions(self, their_wormhole_versions):
-        print("got versions", their_wormhole_versions)
         if self._manager:
             self._manager.got_wormhole_versions(their_wormhole_versions)
         else:
