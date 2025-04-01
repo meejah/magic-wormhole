@@ -62,3 +62,19 @@ class WormholeMachine(RuleBasedStateMachine):
         self._reactor.advance(1)
         ## await ...
         assert d.called # now we have a welcome message!
+
+
+def test_foo(mailbox):
+
+    reactor = MemoryReactorClockResolver()
+    eq = EventualQueue(reactor)
+    w = create("foo", "ws://whatever:1/v1", reactor, _eventual_queue=eq)
+
+    machines = []
+
+    def create_machine():
+        m = WormholeMachine(w, reactor)
+        machines.append(m)
+        return m
+    run_state_machine_as_test(create_machine)
+
