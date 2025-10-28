@@ -27,6 +27,13 @@ class DirectoryOffer:
     size: int         # total number of bytes in _all_ files
     files: list[str]   # a list containing relative paths for each file
 
+    def marshal(self):
+        return {
+            "base": self.base,
+            "size": self.size,
+            "files": self.files,
+        }
+
 
 @define
 class OfferAccept:
@@ -103,6 +110,9 @@ class DilatedFileSender:
         self._finished = finished
         self._hasher = blake2b(digest_size=32)
         self._bytes = 0
+
+    def error(self, msg):
+        print(f"ERROR: {msg}")
 
     def on_message(self, msg):
         """
@@ -317,7 +327,7 @@ class DilatedFileReceiver:
         """
         A message has been received; act on it.
         """
-        if isinstance(msg, FileOffer):
+        if isinstance(msg, (FileOffer, DirectoryOffer)):
             return self.offer_received(msg)
         elif isinstance(msg, FileData):
             return self.data_received(msg.data)
@@ -420,6 +430,7 @@ class DilatedFileReceiver:
 
     @m.output()
     def _send_accept(self, offer, file_like):
+        self._base = file_like  # for directory offers, fixme
         self._output = file_like
         msg = OfferAccept()
         self._send_message(msg)
@@ -444,6 +455,13 @@ class DilatedFileReceiver:
     @m.output()
     def _close_subchannel(self):
         pass
+
+    @m.output()
+    def _open_file(self, offer):
+        print("inline offer", offer)
+        fname = self._base.preauthChild(offer.filename)
+        fname.parent().makedirs(ignoreExistingDirectory=True)
+        self._output = fname.open("wb")
 
     @m.output()
     def _write_data_to_file(self, data):
@@ -474,6 +492,11 @@ class DilatedFileReceiver:
         collector=_last_one,
     )
 
+    receive_data.upon(
+        offer_received,
+        enter=receive_data,
+        outputs=[_open_file],
+    )
     receive_data.upon(
         data_received,
         enter=receive_data,

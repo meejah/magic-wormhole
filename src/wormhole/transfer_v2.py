@@ -4,7 +4,7 @@ import struct
 
 from zope.interface import implementer
 
-from twisted.internet.defer import Deferred, maybeDeferred, DeferredList
+from twisted.internet.defer import Deferred, maybeDeferred, DeferredList, ensureDeferred
 from twisted.internet.protocol import Protocol, Factory
 from twisted.python.filepath import FilePath
 
@@ -48,21 +48,6 @@ def decode_message(msg):
             return Class(**payload)
 
 
-def decode_control_message(raw_data):
-    """
-    Decodes an incoming control-channel message, raising exception on
-    error.
-    """
-    msg = msgpack.loads(raw_data)
-    try:
-        kind = msg["kind"]
-    except KeyError:
-        raise Exception("Control messages must include 'kind' field")
-    if kind == "text":
-        return Message(msg["message"])
-    raise Exception("Unknown control message '{}'".format(kind))
-
-
 def encode_message(msg):
     """
     :returns: a bytes consisting of the kind byte plus msgpack-encoded
@@ -86,7 +71,6 @@ def encode_message(msg):
         else:
             payload = msgpack.dumps(msg.marshal())
         return kind_byte + payload
-
 
 
 #XXX fixme notes
@@ -135,28 +119,16 @@ async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transi
     def accept_always(receiver, offer):
         # an @output() will call this predicate, so we can't
         # immediately re-enter with an @input()
-        the_file = receive_directory.child(offer.filename).open("wb")
+        print(f"Offer: {offer}")
+        if isinstance(offer, FileOffer):
+            the_file = receive_directory.child(offer.filename).open("wb")
+        else:
+            the_file = receive_directory.child(offer.base)
         reactor.callLater(0, receiver.accept_offer, offer, the_file)
     recv_factory.accept_or_reject_p = accept_always
 
     listen_ep = dilated.listener_for("transfer")
     await listen_ep.listen(recv_factory)  # returns "port"
-
-    class Control(Protocol):
-        def __init__(self, *args, **kw):
-            super().__init__(*args, **kw)
-            self._closed = OneShotObserver(EventualQueue(reactor))
-
-        def when_closed(self):
-            return self._closed.when_fired()
-
-        def dataReceived(self, data):
-            if on_message is not None:
-                msg = decode_control_message(data)
-                on_message(msg)
-
-        def connectionLost(self, reason):
-            self._closed.fire(None)
 
     # XXX shutdown still "exercise to the reader" :/
     when_done = Deferred()
@@ -165,7 +137,10 @@ async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transi
     if offers:
         # could send in parallel ...
         for offer in offers:
-            await send_file_offer(connect_ep, wormhole, boss, offer)
+            if offer.is_file():
+                await send_file_offer(connect_ep, wormhole, boss, offer)
+            else:
+                await send_directory_offer(connect_ep, wormhole, boss, offer)
 
     await when_done  # never fires; need shutdown path implemented
     await wormhole.close()
@@ -312,6 +287,77 @@ async def send_file_offer(connect_ep, wormhole, boss, fpath):
         file_data_streamer.start(proto.transport, sender)
         print("started")
         d = file_data_streamer.when_done()
+        d.addCallbacks(
+            lambda _: sender.data_finished(),
+            lambda _: sender.error(),
+        )
+
+    def finished():
+        print("finished")
+        proto.transport.loseConnection()
+
+
+    proto._sender = sender = boss.make_offer(send_message, start_streaming, finished)
+
+    print("sending offer")
+    sender.send_offer(offer)
+
+    await proto.when_closed()
+    print("done")
+
+
+async def send_directory_offer(connect_ep, wormhole, boss, fpath):
+    proto = await connect_ep.connect(Factory.forProtocol(Sender))
+    print("proto", proto)
+    await proto.when_connected()
+
+    assert fpath.is_dir(), "path is not a directory"
+
+    # e.g. src/wormhole becomes "wormhole" here
+    base = fpath.name
+    size = 0
+    files = []
+    streamers = []
+
+    def recursive_walk(root):
+        nonlocal size
+        for path, subdirs, fnames in root.walk():
+            for fname in fnames:
+                rel = path / fname
+                size += rel.lstat().st_size
+                files.append(str(rel))
+                streamers.append(
+                    FileDataSource(rel.open("rb"))
+                )
+            for subdir in subdirs:
+                recursive_walk(root / subdir)
+    recursive_walk(fpath)
+    print(f"{len(files)} files, {size} bytes")
+
+    offer = DirectoryOffer(base, size, files)
+
+    def send_message(msg):
+        data = encode_message(msg)
+        print(f"sending {len(data)} bytes")
+        proto.transport.write(data)
+
+    def start_streaming():
+        print("ready to send data...")
+
+        async def send_files():
+            for fname, streamer in zip(files, streamers):
+                print(f"  {fname}")
+                send_message(
+                    FileOffer(
+                        str(fname),
+                        0,  # todo: timestamp
+                        0,  # todo: bytes
+                    )
+                )
+                streamer.start(proto.transport, sender)
+                await streamer.when_done()
+
+        d = ensureDeferred(send_files())
         d.addCallbacks(
             lambda _: sender.data_finished(),
             lambda _: sender.error(),
