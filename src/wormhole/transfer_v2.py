@@ -142,8 +142,33 @@ async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transi
             else:
                 await send_directory_offer(connect_ep, wormhole, boss, offer)
 
-    await when_done  # never fires; need shutdown path implemented
-    await wormhole.close()
+    # can we just read paths off stdin and thus support cheap
+    # drag-and-drop sort of behavior?
+    # todo: "termios" will break on windows so just don't support it there?
+    from twisted.internet.stdio import StandardIO
+    import termios
+    import sys
+    import tty
+
+    class FileDrop(Protocol):
+        def dataReceived(self, data):
+            fp = FilePath(data)
+            if fp.exists():
+                print(f"dragged file: {fp} {fp.isdir()}")
+
+    old_settings = termios.tcgetattr(sys.stdin.fileno())
+    # see also https://github.com/Textualize/rich/issues/1103
+    tty.setcbreak(sys.stdin.fileno())
+
+    try:
+        dropper = FileDrop()
+        _ = StandardIO(dropper)
+
+        await when_done  # never fires; need shutdown path implemented
+        await wormhole.close()
+
+    finally:
+        termios.tcsetattr(sys.stdin.fileno(), termios.TCSADRAIN, old_settings)
 
 
 class Receiver(Protocol):
