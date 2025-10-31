@@ -131,6 +131,11 @@ async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transi
     await listen_ep.listen(recv_factory)  # returns "port"
 
     # XXX shutdown still "exercise to the reader" :/
+    # but aping what Fowl does, we want to:
+    # - send "closing" with highest phase number message we've seen
+    # - wait for "closing" from peer
+    # - bonus: confirm they didn't cheat and send extra messages
+    # - once a peer has two "closing" messages (i.e. their's + peer's) they CLOSE mailbox and exit
     when_done = Deferred()
     connect_ep = dilated.connector_for("transfer")
 
