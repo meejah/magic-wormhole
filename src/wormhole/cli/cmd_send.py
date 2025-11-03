@@ -158,6 +158,18 @@ class Sender:
         else:
             next_message = None
 
+        def status_updated(st):
+            #print(f"status: {st}")
+            print("outgoing:")
+            for offer in st.outgoing.values():
+                if offer.kind == "file":
+                    pct = int(float(offer.transferred) / float(offer.total_bytes) * 100)
+                    print(f"  {offer.name}: {pct}%")
+                else:
+                    pct = int(float(offer.transferred) / float(offer.total_bytes) * 100)
+                    print(f"  {offer.name}: {pct}%")
+                    print(f"    -> currently: {offer.current_fname}")
+
         yield Deferred.fromCoroutine(
             deferred_transfer(
                 self._reactor, w, on_error,
@@ -168,6 +180,7 @@ class Sender:
                     for what in (self._args.what or [])
                 ],
                 next_message=next_message,
+                on_status=status_updated,
             )
         )
         return

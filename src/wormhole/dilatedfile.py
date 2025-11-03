@@ -3,8 +3,10 @@
 # Transfer
 
 from hashlib import blake2b
-from attr import define
+from attr import define, frozen, evolve
+import attrs
 from automat import MethodicalMachine
+from typing import Dict, List
 
 
 @define
@@ -217,7 +219,7 @@ class DilatedFileSender:
 
     @m.output()
     def _send_data(self, data):
-        print("SEND", len(data))
+        ##print("SEND", len(data))
         self._bytes += len(data)
         self._hasher.update(data)
         self._send_message(FileData(data))
@@ -315,13 +317,30 @@ class DilatedFileReceiver:
     """
     m = MethodicalMachine()
 
-    def __init__(self, accept_or_reject_p, send_message):
+    def __init__(self, accept_or_reject_p, send_message, status):
         self._accept_or_reject = accept_or_reject_p
         self._send_message = send_message
         self._hasher = blake2b(digest_size=32)  # compute the hash of received bytes
+        self._status = status  # DilatedStatusTracker instance
+        self._offer_id = None  # opaque ID for above tracker (non-None after we start)
         self._bytes = 0  # how many bytes we've received
 
     set_trace = getattr(m, "_setTrace", lambda self, f: None)
+
+    def _emit_started(self, fname, kind, total_bytes):
+        self._offer_id = self._status.incoming_added(fname, kind, total_bytes)
+
+    def _emit_current_file(self, fname):
+        assert self._offer_id is not None, "Internal Error: no offer_id yet"
+        self._status.update_current_file(self._offer_id, fname)
+
+    def _emit_bytes(self, more_bytes):
+        assert self._offer_id is not None, "Internal Error: no offer_id yet"
+        self._status.update_bytes(self._offer_id, more_bytes)
+
+    def _emit_acknowledge(self):
+        assert self._offer_id is not None, "Internal Error: no offer_id yet"
+        self._status.offer_acknowledged(self._offer_id)
 
     def on_message(self, msg):
         """
@@ -430,6 +449,15 @@ class DilatedFileReceiver:
 
     @m.output()
     def _send_accept(self, offer, file_like):
+        if isinstance(offer, FileOffer):
+            kind = "file"
+            name = offer.filename
+            size = offer.bytes
+        else:
+            kind = "directory"
+            name = offer.base
+            size = offer.size
+        self._emit_started(name, kind, size)  # todo: can we make this in @output() too?
         self._base = file_like  # for directory offers, fixme
         self._output = file_like
         msg = OfferAccept()
@@ -444,6 +472,7 @@ class DilatedFileReceiver:
     def _send_acknowledge(self):
         msg = FileAcknowledge(self._bytes, self._hasher.digest())
         self._send_message(msg)
+        self._emit_acknowledge()
 
     @m.output()
     def _check_acknowledge(self, acknowledge_msg):
@@ -458,10 +487,10 @@ class DilatedFileReceiver:
 
     @m.output()
     def _open_file(self, offer):
-        print("inline offer", offer)
         fname = self._base.preauthChild(offer.filename)
         fname.parent().makedirs(ignoreExistingDirectory=True)
         self._output = fname.open("wb")
+        self._emit_current_file(fname.path)
 
     @m.output()
     def _write_data_to_file(self, data):
@@ -471,6 +500,7 @@ class DilatedFileReceiver:
         self._bytes += len(data)
         self._hasher.update(data)
         self._output.write(data)
+        self._emit_bytes(len(data))
 
     await_offer.upon(
         offer_received,
@@ -613,7 +643,7 @@ class DilatedFileTransfer(object):
         """
 
     @m.input()
-    def offer_received(self, accept_or_reject_p, send_message):
+    def offer_received(self, accept_or_reject_p, send_message, status):
         """
         Make a receive machine so we can accept a file / directory.
         """
@@ -624,12 +654,13 @@ class DilatedFileTransfer(object):
         The dilated connection has been closed down
         """
 
+    # todo: think: is it better to put "status" stuff into these state-machines?
     @m.output()
-    def _create_receiver(self, accept_or_reject_p, send_message):
+    def _create_receiver(self, accept_or_reject_p, send_message, status):
         """
         Make a DilatedFileReceiver
         """
-        return DilatedFileReceiver(accept_or_reject_p, send_message)
+        return DilatedFileReceiver(accept_or_reject_p, send_message, status)
 
     @m.output()
     def _create_sender(self, send_message, start_streaming, finished):
@@ -748,3 +779,113 @@ class DilatedFileTransfer(object):
         outputs=[],
         collector=_last_one,
     )
+
+
+@frozen
+class Offer:
+    id: int
+    name: str
+    kind: str  # "file" or "directory"
+    total_bytes: int
+    transferred: int = 0
+    current_fname: str = ""
+    acknowledged: bool = False
+
+
+@frozen
+class DilatedTransferStatus:
+    """
+    Tracks ongoing status of offers, answers and sent files
+    """
+
+    outgoing: list = attrs.Factory(dict)
+    incoming: list = attrs.Factory(dict)
+
+
+def _produce_ids():
+    seq = 1
+    while True:
+        yield seq
+        seq += 1
+
+
+@define
+class DilatedStatusTracker:
+    _current: DilatedTransferStatus = DilatedTransferStatus()
+    _listeners: list = attrs.Factory(list)
+    _id_generator = _produce_ids()
+    _offers: Dict[str, Offer] = attrs.Factory(dict)
+
+    def add_listener(self, on_status):
+        self._listeners.append(on_status)
+
+    def _notify(self):
+        for listener in self._listeners:
+            listener(self._current)
+
+    def outgoing_added(self, name, kind, total_bytes):
+        if kind not in ("file", "directory"):
+            raise ValueError(f'Invalid kind="{kind}"')
+        offer_id = next(self._id_generator)
+        offer = Offer(
+            offer_id,
+            name,
+            kind,
+            total_bytes,
+        )
+        self._current.outgoing[offer_id] = offer
+        self._offers[offer.id] = offer
+        self._notify()
+        return offer_id
+
+    def incoming_added(self, name, kind, total_bytes):
+        if kind not in ("file", "directory"):
+            raise ValueError(f'Invalid kind="{kind}"')
+        offer_id = next(self._id_generator)
+        offer = Offer(
+            offer_id,
+            name,
+            kind,
+            total_bytes,
+        )
+        self._offers[offer_id] = offer
+        self._current.incoming[offer_id] = offer
+        self._notify()
+        return offer_id
+
+    def update_bytes(self, offer_id, transferred):
+        offer = self._offers[offer_id]
+        self._offers[offer_id] = offer = evolve(
+            offer,
+            transferred=(offer.transferred + transferred),
+        )
+        assert offer_id in self._current.incoming or offer_id in self._current.outgoing
+        if offer_id in self._current.incoming:
+            self._current.incoming[offer_id] = offer
+        else:
+            self._current.outgoing[offer_id] = offer
+        self._notify()
+
+    def offer_acknowledged(self, offer_id):
+        offer = self._offers[offer_id]
+        self._offers[offer_id] = offer = evolve(
+            offer,
+            acknowledged=True,
+        )
+        if offer_id in self._current.incoming:
+            self._current.incoming[offer_id] = offer
+        else:
+            self._current.outgoing[offer_id] = offer
+        self._notify()
+
+    def update_current_file(self, offer_id, fname):
+        offer = self._offers[offer_id]
+        self._offers[offer_id] = offer = evolve(
+            offer,
+            current_fname=fname,
+        )
+        if offer_id in self._current.incoming:
+            self._current.incoming[offer_id] = offer
+        else:
+            self._current.outgoing[offer_id] = offer
+        self._notify()

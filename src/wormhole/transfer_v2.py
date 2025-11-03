@@ -21,6 +21,7 @@ from wormhole.dilatedfile import (
     FileAcknowledge,
     Message,
     DilatedFileTransfer,
+    DilatedStatusTracker,
 )
 
 
@@ -83,7 +84,7 @@ def encode_message(msg):
 #     - ...and more generic "make_offer()" function?
 
 # wormhole: _DeferredWormhole,
-async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transit=None, code=None, offers=None, receive_directory=None, next_message=None):
+async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transit=None, code=None, offers=None, receive_directory=None, next_message=None, on_status=None):
     """
     Do transfer protocol over an async wormhole interface
     """
@@ -108,12 +109,18 @@ async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transi
         # XXX fall back to "classic" file-trasfer
         raise RuntimeError("Peer doesn't support Dilated transfer")
 
+
+    status_tracker = DilatedStatusTracker()
+    if on_status is not None:
+        status_tracker.add_listener(on_status)
+
     boss = DilatedFileTransfer()
     boss.got_peer_versions(transfer)
 
     dilated = wormhole.dilate(transit)
 
     recv_factory = Factory.forProtocol(Receiver)
+    recv_factory.status = status_tracker
     recv_factory.boss = boss
 
     def accept_always(receiver, offer):
@@ -143,9 +150,9 @@ async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transi
         # could send in parallel ...
         for offer in offers:
             if offer.is_file():
-                await send_file_offer(connect_ep, wormhole, boss, offer)
+                await send_file_offer(connect_ep, wormhole, boss, offer, status_tracker)
             else:
-                await send_directory_offer(connect_ep, wormhole, boss, offer)
+                await send_directory_offer(connect_ep, wormhole, boss, offer, status_tracker)
 
     # can we just read paths off stdin and thus support cheap
     # drag-and-drop sort of behavior?
@@ -154,12 +161,19 @@ async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transi
     import termios
     import sys
     import tty
+    from pathlib import Path
 
     class FileDrop(Protocol):
         def dataReceived(self, data):
-            fp = FilePath(data)
-            if fp.exists():
-                print(f"dragged file: {fp} {fp.isdir()}")
+            offer = Path(data.decode("utf8"))  # todo: why utf8??
+            if offer.exists():
+                print(f"dragged file: {offer}")
+                if offer.is_file():
+                    d = ensureDeferred(send_file_offer(connect_ep, wormhole, boss, offer, status_tracker))
+                else:
+                    d = ensureDeferred(send_directory_offer(connect_ep, wormhole, boss, offer, status_tracker))
+                print(d)
+                d.addErrback(print)
 
     old_settings = termios.tcgetattr(sys.stdin.fileno())
     # see also https://github.com/Textualize/rich/issues/1103
@@ -183,8 +197,8 @@ class Receiver(Protocol):
         self.transport.write(encode_message(msg))
 
     def connectionMade(self):
-        self._machine = self.factory.boss.offer_received(self.factory.accept_or_reject_p, self.send_message)
-        self._machine.set_trace(lambda *args: print("TRACE", args))
+        self._machine = self.factory.boss.offer_received(self.factory.accept_or_reject_p, self.send_message, self.factory.status)
+        ##self._machine.set_trace(lambda *args: print("TRACE", args))
 
     def dataReceived(self, raw_data):
         # should be an entire record (right??)
@@ -205,8 +219,9 @@ class FileDataSource:
     A source of data which is a file, implemented using IPullProducer
     """
 
-    def __init__(self, fp, chunk_size=2**11):
+    def __init__(self, fp, on_bytes_sent, chunk_size=2**11):
         self._fp = fp
+        self._on_bytes = on_bytes_sent
         self._chunk_size = chunk_size
         self._when_done = []
 
@@ -233,12 +248,13 @@ class FileDataSource:
             # we want all data to go through the state-machine; it
             # will call send_message which will write to our consumer
             # (the protocol transport)
+            self._on_bytes(len(data))
             self.machine.send_data(data)
         else:
             self.stopProducing()
 
     def stopProducing(self):
-        print("stopProducing")
+        ##print("stopProducing")
         self.consumer.unregisterProducer()
         self._fp.close()
         notify = self._when_done
@@ -281,9 +297,9 @@ class Sender(Protocol):
 
     def dataReceived(self, raw_data):
         # should be an entire record (right??)
-        print(f"recv: {raw_data}")
+        ##print(f"recv: {raw_data}")
         msg = decode_message(raw_data)
-        print(f"parsed: {msg}")
+        ##print(f"parsed: {msg}")
         out_msg = self._sender.on_message(msg)
         if out_msg:
             print(f"have outgoing: {out_msg}")
@@ -299,7 +315,7 @@ class Sender(Protocol):
                 d.callback(None)
 
 
-async def send_file_offer(connect_ep, wormhole, boss, fpath):
+async def send_file_offer(connect_ep, wormhole, boss, fpath, status_tracker):
     proto = await connect_ep.connect(Factory.forProtocol(Sender))
     print("proto", proto)
     await proto.when_connected()
@@ -307,15 +323,20 @@ async def send_file_offer(connect_ep, wormhole, boss, fpath):
     # XXX need a whole different state-machine for directories i think..
     assert fpath.is_file(), "file must exist and be a file"
     offer = FileOffer(fpath.name, fpath.stat().st_mtime, fpath.stat().st_size)
-    file_data_streamer = FileDataSource(fpath.open("rb"))
+    offer_id = status_tracker.outgoing_added(fpath.name, "file", fpath.stat().st_size)
+
+    def got_bytes(count):
+        #print(f"got bytes {count}")
+        status_tracker.update_bytes(offer_id, count)
+    file_data_streamer = FileDataSource(fpath.open("rb"), got_bytes)
 
     def send_message(msg):
         proto.transport.write(encode_message(msg))
 
     def start_streaming():
-        print("ready to send data...")
+        ##print("ready to send data...")
         file_data_streamer.start(proto.transport, sender)
-        print("started")
+        ##print("started")
         d = file_data_streamer.when_done()
         d.addCallbacks(
             lambda _: sender.data_finished(),
@@ -323,22 +344,23 @@ async def send_file_offer(connect_ep, wormhole, boss, fpath):
         )
 
     def finished():
-        print("finished")
+        ##print("finished")
+        status_tracker.offer_acknowledged(offer_id)
         proto.transport.loseConnection()
 
 
     proto._sender = sender = boss.make_offer(send_message, start_streaming, finished)
 
-    print("sending offer")
+    ##print("sending offer", sender)
     sender.send_offer(offer)
 
     await proto.when_closed()
     print("done")
 
 
-async def send_directory_offer(connect_ep, wormhole, boss, fpath):
+async def send_directory_offer(connect_ep, wormhole, boss, fpath, status_tracker):
     proto = await connect_ep.connect(Factory.forProtocol(Sender))
-    print("proto", proto)
+    ##print("proto", proto)
     await proto.when_connected()
 
     assert fpath.is_dir(), "path is not a directory"
@@ -349,6 +371,10 @@ async def send_directory_offer(connect_ep, wormhole, boss, fpath):
     files = []
     streamers = []
 
+    def got_bytes(count):
+        ##print(f"got bytes {count}")
+        status_tracker.update_bytes(offer_id, count)
+
     def recursive_walk(root):
         nonlocal size
         for path, subdirs, fnames in root.walk():
@@ -357,26 +383,28 @@ async def send_directory_offer(connect_ep, wormhole, boss, fpath):
                 size += rel.lstat().st_size
                 files.append(str(rel))
                 streamers.append(
-                    FileDataSource(rel.open("rb"))
+                    FileDataSource(rel.open("rb"), got_bytes)
                 )
             for subdir in subdirs:
                 recursive_walk(root / subdir)
     recursive_walk(fpath)
-    print(f"{len(files)} files, {size} bytes")
+    ##print(f"{len(files)} files, {size} bytes")
 
     offer = DirectoryOffer(base, size, files)
+    offer_id = status_tracker.outgoing_added(fpath.name, "directory", size)
 
     def send_message(msg):
         data = encode_message(msg)
-        print(f"sending {len(data)} bytes")
+        ##print(f"sending {len(data)} bytes")
         proto.transport.write(data)
 
     def start_streaming():
-        print("ready to send data...")
+        ##print("ready to send data...")
 
         async def send_files():
             for fname, streamer in zip(files, streamers):
-                print(f"  {fname}")
+                ##print(f"  {fname}")
+                status_tracker.update_current_file(offer_id, fname)
                 send_message(
                     FileOffer(
                         str(fname),
@@ -394,14 +422,13 @@ async def send_directory_offer(connect_ep, wormhole, boss, fpath):
         )
 
     def finished():
-        print("finished")
+        ##print("finished")
+        # todo: we didn't actually track if each one is acknowledged...
+        status_tracker.offer_acknowledged(offer_id)
         proto.transport.loseConnection()
 
 
     proto._sender = sender = boss.make_offer(send_message, start_streaming, finished)
 
-    print("sending offer")
     sender.send_offer(offer)
-
     await proto.when_closed()
-    print("done")

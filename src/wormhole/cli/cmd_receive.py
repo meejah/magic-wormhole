@@ -149,6 +149,21 @@ class Receiver:
         def on_slow_key():
             print("Waiting for sender...", file=self.args.stderr)
 
+        # todo: more evidence for a "transfer" subcommand for Dilated
+        # Transfer (lots of duplicated code -- and we might be
+        # "sending" AND OR "receiving" even though we said "send")
+        def status_updated(st):
+            #print(f"status: {st}")
+            print("incoming:")
+            for offer in st.incoming.values():
+                if offer.kind == "file":
+                    pct = int(float(offer.transferred) / float(offer.total_bytes) * 100)
+                    print(f"  {offer.name}: {pct}%")
+                else:
+                    pct = int(float(offer.transferred) / float(offer.total_bytes) * 100)
+                    print(f"  {offer.name}: {pct}%")
+                    print(f"    -> currently: {offer.current_fname}")
+
         from wormhole.transfer_v2 import deferred_transfer
         yield Deferred.fromCoroutine(
             deferred_transfer(
@@ -161,6 +176,7 @@ class Receiver:
                 # this can be None, but that's handled inside
                 receive_directory=FilePath("." if self.args.output_file is None else self.args.output_file),
                 next_message=next_message,
+                on_status=status_updated,
             )
         )
         return
