@@ -3,11 +3,13 @@ import os
 import sys
 import tempfile
 import zipfile
+import random
 
 from humanize import naturalsize
 from tqdm import tqdm
 from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks, Deferred
+from twisted.internet.task import deferLater
 from twisted.internet.stdio import StandardIO
 from twisted.python.filepath import FilePath
 from wormhole import create, input_with_completion
@@ -17,7 +19,7 @@ from ..eventual import EventualQueue
 from ..transit import TransitReceiver
 from ..util import (bytes_to_dict, bytes_to_hexstr, dict_to_bytes,
                     estimate_free_space)
-from ..dilatedfile import Message
+from ..dilatedfile import Message, FileOffer, DirectoryOffer
 
 APPID = "lothar.com/wormhole/text-or-file-xfer"
 
@@ -164,17 +166,30 @@ class Receiver:
                     print(f"  {offer.name}: {pct}%")
                     print(f"    -> currently: {offer.current_fname}")
 
+
+        ##receive_directory = FilePath(".")
+        receive_directory = FilePath("." if self.args.output_file is None else self.args.output_file)
+
+        async def place_offer(offer):
+            print(f"Offer: {offer}")
+            wait = random.randrange(1, 6)
+            for n in range(wait, 0, -1):
+                print(f"  waiting {n}")
+                await deferLater(reactor, 1.0, lambda: None)
+            if isinstance(offer, FileOffer):
+                return receive_directory.child(offer.filename).open("wb")
+            return receive_directory.child(offer.base)
+
         from wormhole.transfer_v2 import deferred_transfer
         yield Deferred.fromCoroutine(
             deferred_transfer(
                 self._reactor,
                 w,
                 on_error,
+                place_offer,
                 on_message,
                 transit=self.args.transit_helper,
                 code=self.args.code,
-                # this can be None, but that's handled inside
-                receive_directory=FilePath("." if self.args.output_file is None else self.args.output_file),
                 next_message=next_message,
                 on_status=status_updated,
             )

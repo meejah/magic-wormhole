@@ -4,7 +4,7 @@ import struct
 
 from zope.interface import implementer
 
-from twisted.internet.defer import Deferred, maybeDeferred, DeferredList, ensureDeferred
+from twisted.internet.defer import Deferred, maybeDeferred, DeferredList, ensureDeferred, gatherResults
 from twisted.internet.protocol import Protocol, Factory
 from twisted.python.filepath import FilePath
 
@@ -84,9 +84,19 @@ def encode_message(msg):
 #     - ...and more generic "make_offer()" function?
 
 # wormhole: _DeferredWormhole,
-async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transit=None, code=None, offers=None, receive_directory=None, next_message=None, on_status=None):
+async def deferred_transfer(reactor, wormhole, on_error, offer_placement, on_message=None, transit=None, code=None, offers=None, next_message=None, on_status=None):
     """
     Do transfer protocol over an async wormhole interface
+
+    :param IReactorCore reactor:
+
+    :param IDeferredWormhole wormhole: the wormhole instance to use
+
+    :param Callable on_error: fixme what is this for?
+
+    :param Callable[] offer_placement: find the location to put the
+        offer, or reject it. todo: documentation, and is this really a good way?
+        (also: reject non-coro-functions)
     """
 
     # XXX FIXME
@@ -97,9 +107,6 @@ async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transi
         wormhole.set_code(code)
         await wormhole.get_code()
     print("code", code)
-
-    if receive_directory is None:
-        receive_directory = FilePath(".")
 
     versions = await wormhole.get_versions()
 
@@ -123,16 +130,27 @@ async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transi
     recv_factory.status = status_tracker
     recv_factory.boss = boss
 
-    def accept_always(receiver, offer):
-        # an @output() will call this predicate, so we can't
-        # immediately re-enter with an @input()
-        print(f"Offer: {offer}")
-        if isinstance(offer, FileOffer):
-            the_file = receive_directory.child(offer.filename).open("wb")
-        else:
-            the_file = receive_directory.child(offer.base)
-        reactor.callLater(0, receiver.accept_offer, offer, the_file)
-    recv_factory.accept_or_reject_p = accept_always
+    # this CAN'T be async, because it's part of the Receiver
+    # state-machine, so we eat the (possible) async-ness of the app
+    # code here.
+    # todo: handle errors better
+    # todo: allow app callback to be "not-async"
+    # todo: what if app callback is _sync_?? (e.g. input())
+    #       -> either proper error, or deferToThread()
+    def accept_or_reject(receiver, offer):
+
+        async def ask_app_code():
+            try:
+                result = await ensureDeferred(offer_placement(offer))
+            except Exception as e:
+                print(f"Error asking for offer: {e}")
+                result = None
+            if result:
+                reactor.callLater(0, receiver.accept_offer, offer, result)
+            else:
+                reactor.callLater(0, receiver.reject_offer, offer)
+        d = ensureDeferred(ask_app_code())
+    recv_factory.accept_or_reject_p = accept_or_reject
 
     listen_ep = dilated.listener_for("transfer")
     await listen_ep.listen(recv_factory)  # returns "port"
@@ -147,12 +165,23 @@ async def deferred_transfer(reactor, wormhole, on_error, on_message=None, transi
     connect_ep = dilated.connector_for("transfer")
 
     if offers:
-        # could send in parallel ...
+        # could be a param / option / Semaphore to send certain number
+        # "at once" or not?
+        outstanding = []
         for offer in offers:
             if offer.is_file():
-                await send_file_offer(connect_ep, wormhole, boss, offer, status_tracker)
+                outstanding.append(
+                    ensureDeferred(
+                        send_file_offer(connect_ep, wormhole, boss, offer, status_tracker)
+                    )
+                )
             else:
-                await send_directory_offer(connect_ep, wormhole, boss, offer, status_tracker)
+                outstanding.append(
+                    ensureDeferred(
+                        send_directory_offer(connect_ep, wormhole, boss, offer, status_tracker)
+                    )
+                )
+        await gatherResults(outstanding)
 
     # can we just read paths off stdin and thus support cheap
     # drag-and-drop sort of behavior?

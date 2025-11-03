@@ -465,6 +465,7 @@ class DilatedFileReceiver:
 
     @m.output()
     def _send_reject(self, offer):
+        print(f"rejecting: {offer}")
         msg = OfferReject("Offer rejected")  # XXX user-defined message?
         self._send_message(msg)
 

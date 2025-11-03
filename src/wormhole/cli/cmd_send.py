@@ -170,9 +170,15 @@ class Sender:
                     print(f"  {offer.name}: {pct}%")
                     print(f"    -> currently: {offer.current_fname}")
 
+        # todo: reject non-async callbacks
+        async def place_offer(offer):
+            print("Offer (we'll reject): {offer}")
+            return None
+
         yield Deferred.fromCoroutine(
             deferred_transfer(
                 self._reactor, w, on_error,
+                place_offer,
                 code=self._args.code,
                 transit=self._args.transit_helper,
                 offers=[
