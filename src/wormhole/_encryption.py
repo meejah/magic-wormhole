@@ -12,9 +12,6 @@ from .util import (dict_to_bytes,
 from .errors import WrongPasswordError, CausalityError, _UnknownPhaseError
 from ._key_setup.ikeysetup import IKeySetup, Send, HaveAllegedKey, Done
 from ._key_setup.key_setup_v0 import KeySetup_V0, key_setup_v0
-||||||| parent of 78df098a (WIP: try to make new Automat API work)
-from ._key_setup.interfaces_key_setup import INegotiation, Send, HaveAllegedKey, Done
-from ._key_setup.negotiate_v0 import Negotiate_V0
 
 __all__ = ["Encryption", "_EncryptionCore"]
 # phase classifiers

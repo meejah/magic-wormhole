@@ -32,7 +32,7 @@ class KeySetupZero(typing.Protocol):
         our outbound PAKE-0 message.
         """
 
-    def received_pake(body: bytes) -> list[OutputMessage]:
+    def received_pake(body: bytes) -> list[KeySetupOutput]:
         """
         Input messages might be processed immediately, or queued until
         the arrival of some future message. Any number of
@@ -53,13 +53,13 @@ class KeySetupZero(typing.Protocol):
         all of which are terminal and sticky.
         """
 
-    def received_version(body: bytes) -> list[OutputMessage]:
+    def received_version(body: bytes) -> list[KeySetupOutput]:
         """
         """
 
 
 @define
-class NegotiationState:
+class KeySetupState:
     side: bytes
     app_id: str
     app_versions: dict
@@ -68,19 +68,19 @@ class NegotiationState:
 
 
 
-def remember_message(inputs: Negotiate, state: NegotiationState, message: InputMessage) -> InputMessage | None:
+def remember_message(inputs: KeySetupZero, state: KeySetupState, message: InputMessage) -> InputMessage | None:
     print("REMEMERM", message)
     return message
 
 
-builder = automat.TypeMachineBuilder(Negotiate, NegotiationState)
+builder = automat.TypeMachineBuilder(Negotiate, KeySetupState)
 idle = builder.state("idle")
 want_pake = builder.state("want_pake")#, remember_message)
 have_alleged_key = builder.state("have_alleged_key")
 done = builder.state("done")
 
 @idle.upon(Negotiate.start).to(want_pake)
-def init_state(neg: Negotiate, state: NegotiationState, code: str) -> dict:
+def init_state(neg: Negotiate, state: KeySetupState, code: str) -> dict:
     # i think we can set stuff in 'state' here and it propagates?
     code_b = to_bytes(code)
     id_b = to_bytes(state.app_id)
@@ -92,7 +92,7 @@ def init_state(neg: Negotiate, state: NegotiationState, code: str) -> dict:
     }
 
 @want_pake.upon(Negotiate.received_pake).to(have_alleged_key)
-def process_pake(inputs: Negotiate, state: NegotiationState, body: bytes) -> list[OutputMessage]:
+def process_pake(inputs: Negotiate, state: KeySetupState, body: bytes) -> list[OutputMessage]:
     payload = bytes_to_dict(body)
     msg2 = hexstr_to_bytes(payload["pake_v1"])
     print("PROCESSPAKE", state.spake)
@@ -105,20 +105,20 @@ def process_pake(inputs: Negotiate, state: NegotiationState, body: bytes) -> lis
     return [M_AddMessage("version", encrypted)]
 
 @have_alleged_key.upon(Negotiate.received_versions).to(done)
-def finalize(inputs: Negotiate, state: NegotiationState, 
+def finalize(inputs: Negotiate, state: KeySetupState):
+    print("finalize")
 
 negotiate_factory = builder.build()
 
 def negotiate_v0(side, appid, app_versions):
     machine = negotiate_factory(
-        NegotiationState(side, appid, app_versions),
+        KeySetupState(side, appid, app_versions),
     )
     return machine
-    
+
 
 @implementer(INegotiation)
 class Negotiate_V0:
->>>>>>> 78df098a (WIP: try to make new Automat API work):src/wormhole/_key_setup/negotiate_v0.py
     def __init__(self, side, appid, app_versions, timing):
         self._side = side
         self._appid = appid
