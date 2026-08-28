@@ -11,7 +11,10 @@ from .util import (dict_to_bytes,
                    encrypt_data, decrypt_data, CryptoError)
 from .errors import WrongPasswordError, CausalityError, _UnknownPhaseError
 from ._key_setup.ikeysetup import IKeySetup, Send, HaveAllegedKey, Done
-from ._key_setup.key_setup_v0 import KeySetup_V0
+from ._key_setup.key_setup_v0 import KeySetup_V0, key_setup_v0
+||||||| parent of 78df098a (WIP: try to make new Automat API work)
+from ._key_setup.interfaces_key_setup import INegotiation, Send, HaveAllegedKey, Done
+from ._key_setup.negotiate_v0 import Negotiate_V0
 
 __all__ = ["Encryption", "_EncryptionCore"]
 # phase classifiers
@@ -29,23 +32,36 @@ def is_numeric(phase):
 @frozen
 class B_GotKey:
     key: bytes
+
 @frozen
 class B_Happy:
     pass
+
 @frozen
 class B_Scared:
     pass
+
 @frozen
 class B_GotVerifier:
     verifier: bytes
+
 @frozen
 class B_GotMessage:
     phase: str
     body: bytes
+
 @frozen
 class M_AddMessage:
     phase: str
     body: bytes
+
+@frozen
+class Done:
+    key: bytes
+    version_data: bytes
+
+InputMessage = B_GotMessage | B_GotVerifier | B_Scared | B_Happy | B_GotKey
+OutputMessage = M_AddMessage | Done
 
 CoreOutput = B_GotKey | B_Happy | B_Scared | B_GotVerifier | B_GotMessage | M_AddMessage
 
@@ -70,6 +86,8 @@ class _EncryptionCore:
         self._outputs: list[CoreOutput] = []
         ks0 = KeySetup_V0(self._side, self._appid, self._app_versions, self._timing)
         self._key_setup = IKeySetup(ks0)
+        ##self._negotiation = INegotiation(ks0)
+        self._negotiation = negotiate_v0(self._side, self._appid, self._app_versions)
 
     def _add_output(self, ev):
         self._outputs.append(ev)
@@ -84,11 +102,20 @@ class _EncryptionCore:
 
     ### Key Setup
 
-    def _process_key_setup(self):
-        while True:
-            match self._key_setup.output():
+    def _process_key_setup(self, messages):
+        # can we get rid of the _output_events.process() dance (and
+        # thus simplify those events) by passing in an "eventually()"
+        # function to this Core class? (In tests, that's synchronous
+        # otherwise it's reactor.callLater(0, ..)
+        #
+        # ...or better yet make the Boss etc do that when required,
+        # with its own reactor? (e.g. "W_got_verifier()" could do a
+        # reactor.callLater(0, self._W.....)
+        print("PROCESS", messages)
+        for message in messages:
+            match message:
                 case None:
-                    return
+                    continue
                 case Send(phase, body):
                     self._add_output(M_AddMessage(phase, body))
                 case HaveAllegedKey(key):
@@ -111,6 +138,7 @@ class _EncryptionCore:
         self._have_code = True
         pieces = self._key_setup.start(code)
         body = dict_to_bytes(pieces)
+        # todo: just call self._M.add_message here (instead of output-message etc dance?)
         self._add_output(M_AddMessage("pake", body)) # PAKE
         self._process_key_setup()
 
@@ -126,13 +154,19 @@ class _EncryptionCore:
         assert isinstance(phase, str), type(phase)
         assert isinstance(body, bytes), type(body)
         if self._scared:
-            return
+            return []
+        # TODO: make sure side means not crowded
         if is_key_setup(phase):
             try:
                 self._key_setup.input(side, phase, body) # can throw
+                if phase == "pake":
+                    return self._negotiation.received_pake(body)
+                elif phase == "version":
+                    return self._negotiation.received_version(body)
             except (WrongPasswordError, CausalityError):
                 self._be_scared()
-                return # TODO: want B.scared, maybe don't want others
+                return [B_Scared()]
+                #return self._get_outputs() # TODO: want B.scared, maybe don't want others
             # Could get CrowdedError but only if Mailbox misbehaved.
             # Note that all errors in received messages (ws_message)
             # will mark the Boss as ERRORY, which stops everything
@@ -145,6 +179,7 @@ class _EncryptionCore:
             # unknown non-numeric phase: spec says to ignore. log.err
             # will flunk unit tests but should be invisible to apps
             log.err(_UnknownPhaseError(f"received unknown phase '{phase}'"))
+        return []
 
     def _drain_queued_received_encrypted(self):
         assert self._key
@@ -224,13 +259,16 @@ class Encryption:
 
     # input from Boss
     def got_code(self, code):
-        self._core.got_code(code)
+        events = self._core.got_code(code)
+        print("got code", code, events)
+        self._events.extend(events)
         self._process_events()
 
     # input from Mailbox
     def got_message(self, side, phase, body):
         self._test_count_received_messages += 1
-        self._core.got_message(side, phase, body)
+        events = self._core.got_message(side, phase, body)
+        self._events.extend(events)
         self._process_events()
 
     # input from Boss and Dilation

@@ -271,9 +271,10 @@ def test_good_key():
     body = assert_MAddMessage(c.output(), "pake")
     assert c.output() == None
     key, msg2 = compute_key(CODE, body)
-    c.got_message("side2", "pake", msg2)
-    assert c.output() == B_GotKey(key)
-    body = assert_MAddMessage(c.output(), "version")
+    events = c.got_message("side2", "pake", msg2)
+    print("EVENTS", events)
+    assert events[0] == B_GotKey(key)
+    body = assert_MAddMessage(events[1], "version")
     assert decrypt_version(key, body) == {}
     assert c.output() == None
 

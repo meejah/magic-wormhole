@@ -1,5 +1,8 @@
+import typing
+import automat
 from zope.interface import implementer
 from spake2 import SPAKE2_Symmetric
+from attrs import define, frozen
 
 from ..util import (bytes_to_dict, bytes_to_hexstr, dict_to_bytes,
                     hexstr_to_bytes, to_bytes, derive_phase_key,
@@ -13,8 +16,109 @@ from .ikeysetup import IKeySetup, Send, HaveAllegedKey, Done, KeySetupOutput
 # versions of the client can fall back to it when their peer can't do
 # something better.
 
-@implementer(IKeySetup)
-class KeySetup_V0:
+# aug26 attempt to translate to _new_ Automat state-machine API
+
+
+## @implementer(IKeySetup)
+class KeySetupZero(typing.Protocol):
+    def start(code: str) -> dict:
+        """Set the wormhole code and generate the PAKE0 components.
+
+        Call this when the complete wormhole code is available and
+        we've either received the peer's PAKE-0 (phase="pake") message
+        or we know we shouldn't wait for it. It will be used by any
+        PAKE algorithms involved in this particular version of the key
+        setup protocol. The return value contains components to go into
+        our outbound PAKE-0 message.
+        """
+
+    def received_pake(body: bytes) -> list[OutputMessage]:
+        """
+        Input messages might be processed immediately, or queued until
+        the arrival of some future message. Any number of
+        `OutputMessage` instances may be produced by a call to
+        `received_*()` and should all be processed by the caller
+        (not necessarily immediately).
+
+        Output messages may be one of:
+
+        * Send(phase, body): send outbound key-setup message to the mailbox.
+          "phase" will specify a PAKE-n or VERSION phase. "body" is bytes.
+        * HaveAllegedKey(key): we have an alleged key
+          # TODO: stop providing the key, leave it for "done"
+        * Done(key, version_data): the key and application version
+          bytes should be delivered to the Boss.
+
+        :throws: CrowdedError, WrongPasswordError, or CausalityError,
+        all of which are terminal and sticky.
+        """
+
+    def received_version(body: bytes) -> list[OutputMessage]:
+        """
+        """
+
+
+@define
+class NegotiationState:
+    side: bytes
+    app_id: str
+    app_versions: dict
+    key: bytes | None = None
+    spake: SPAKE2_Symmetric | None = None
+
+
+
+def remember_message(inputs: Negotiate, state: NegotiationState, message: InputMessage) -> InputMessage | None:
+    print("REMEMERM", message)
+    return message
+
+
+builder = automat.TypeMachineBuilder(Negotiate, NegotiationState)
+idle = builder.state("idle")
+want_pake = builder.state("want_pake")#, remember_message)
+have_alleged_key = builder.state("have_alleged_key")
+done = builder.state("done")
+
+@idle.upon(Negotiate.start).to(want_pake)
+def init_state(neg: Negotiate, state: NegotiationState, code: str) -> dict:
+    # i think we can set stuff in 'state' here and it propagates?
+    code_b = to_bytes(code)
+    id_b = to_bytes(state.app_id)
+    state.spake = SPAKE2_Symmetric(code_b, idSymmetric=id_b)
+    print("INIT", state.spake)
+    msg1 = state.spake.start()
+    return {
+        "pake_v1": bytes_to_hexstr(msg1),
+    }
+
+@want_pake.upon(Negotiate.received_pake).to(have_alleged_key)
+def process_pake(inputs: Negotiate, state: NegotiationState, body: bytes) -> list[OutputMessage]:
+    payload = bytes_to_dict(body)
+    msg2 = hexstr_to_bytes(payload["pake_v1"])
+    print("PROCESSPAKE", state.spake)
+    #with self._timing.add("pake2", waiting="crypto"):
+    state.key = state.spake.finish(msg2)
+
+    data_key = derive_phase_key(state.key, state.side, "version")
+    plaintext = dict_to_bytes(state.app_versions)
+    encrypted = encrypt_data(data_key, plaintext)
+    return [M_AddMessage("version", encrypted)]
+
+@have_alleged_key.upon(Negotiate.received_versions).to(done)
+def finalize(inputs: Negotiate, state: NegotiationState, 
+
+negotiate_factory = builder.build()
+
+def negotiate_v0(side, appid, app_versions):
+    machine = negotiate_factory(
+        NegotiationState(side, appid, app_versions),
+    )
+    return machine
+    
+
+@implementer(INegotiation)
+class Negotiate_V0:
+>>>>>>> 78df098a (WIP: try to make new Automat API work):src/wormhole/_key_setup/negotiate_v0.py
     def __init__(self, side, appid, app_versions, timing):
         self._side = side
         self._appid = appid
@@ -73,6 +177,7 @@ class KeySetup_V0:
                 raise AssertionError("unhandled phase %s" % self._wanted)
 
     def _process_pake(self, side, phase, body):
+        print("HAHA")
         payload = bytes_to_dict(body)
         msg2 = hexstr_to_bytes(payload["pake_v1"])
         assert isinstance(msg2, bytes)
