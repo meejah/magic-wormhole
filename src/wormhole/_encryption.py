@@ -67,6 +67,7 @@ class _EncryptionCore:
     _side: str
     _timing: ITiming = field(validator=provides(ITiming))
 
+    _peer_side: str | None = None
     _have_code = False
     _alleged_key = None # or unverified session key
     _key = None # or verified session key
@@ -131,6 +132,7 @@ class _EncryptionCore:
     def got_code(self, code):
         # self._have_code enables delivery of inbound key-setup messages
         self._have_code = True
+        # we don't know peer's "side" yet
         messages = self._key_setup.start(code)
         self._process_key_setup(messages)
 
@@ -152,8 +154,17 @@ class _EncryptionCore:
         if is_key_setup(phase):
             try:
                 if phase == "pake":
-                    outputs = self._key_setup.received_pake(body)
+                    ##self._key_setup.input(side, phase, body)
+                    ##outputs = self._key_setup._outputs
+
+                    # NOTE: we "bind" to this peer-side on this (and
+                    # only this) input .. again, it is THIS class that
+                    # has to manage "crowded" or not (that code
+                    # doesn't exist here yet)
+                    outputs = self._key_setup.received_pake(body, side)
                 elif phase == "version":
+                    ##self._key_setup.input(side, phase, body)
+                    ##outputs = self._key_setup._outputs
                     outputs = self._key_setup.received_version(body)
                 print("outputs", outputs)
             except (WrongPasswordError, CausalityError):

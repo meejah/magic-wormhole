@@ -32,7 +32,7 @@ class KeySetupZero(typing.Protocol):
         our outbound PAKE-0 message.
         """
 
-    def received_pake(body: bytes) -> list[KeySetupOutput]:
+    def received_pake(body: bytes, peer_side: str) -> list[KeySetupOutput]:
         """
         Input messages might be processed immediately, or queued until
         the arrival of some future message. Any number of
@@ -63,6 +63,7 @@ class KeySetupState:
     side: bytes
     app_id: str
     app_versions: dict
+    peer_side: bytes | None = None
     key: bytes | None = None
     spake: SPAKE2_Symmetric | None = None
     # stash our pake if we get received_pake() before start()
@@ -82,8 +83,9 @@ done = builder.state("done")
 error = builder.state("error")
 
 @idle.upon(KeySetupZero.received_pake).to(want_start)
-def stash_pake(neg: KeySetupZero, state: KeySetupState, body: bytes) -> list[KeySetupOutput]:
+def stash_pake(neg: KeySetupZero, state: KeySetupState, body: bytes, peer_side: str) -> list[KeySetupOutput]:
     state.pake = body
+    state.peer_side = peer_side
     return []
 
 @idle.upon(KeySetupZero.start).to(want_pake)
@@ -114,7 +116,8 @@ def stash_version(inputs: KeySetupZero, state: KeySetupState, version: bytes) ->
     return []
 
 @want_pake.upon(KeySetupZero.received_pake).to(have_alleged_key)
-def process_pake(inputs: KeySetupZero, state: KeySetupState, body: bytes) -> list[KeySetupOutput]:
+def process_pake(inputs: KeySetupZero, state: KeySetupState, body: bytes, peer_side: str) -> list[KeySetupOutput]:
+    state.peer_side = peer_side
     payload = bytes_to_dict(body)
     msg2 = hexstr_to_bytes(payload["pake_v1"])
     print("PROCESSPAKE", state.spake)
@@ -130,8 +133,9 @@ def process_pake(inputs: KeySetupZero, state: KeySetupState, body: bytes) -> lis
     ]
 
 @want_pake_have_version.upon(KeySetupZero.received_pake).to(done)
-def process_pake_and_version(inputs: KeySetupZero, state: KeySetupState, body: bytes) -> list[KeySetupOutput]:
-    outputs = process_pake(inputs, state, body)
+def process_pake_and_version(inputs: KeySetupZero, state: KeySetupState, body: bytes, peer_side: str) -> list[KeySetupOutput]:
+    state.peer_side = peer_side
+    outputs = process_pake(inputs, state, body, peer_side)
     outputs.extend(
         finalize(inputs, state, state.version)
     )
@@ -143,8 +147,9 @@ def finish_pake(neg: KeySetupZero, state: KeySetupState, code: str) -> list[KeyS
     # (with the stashed pake value) ... can we simply call those other
     # functions as-is??
     events = init_state(neg, state, code)
+    assert state.peer_side is not None, "Internal error: no peer_side bound yet"
     events.extend(
-        process_pake(neg, state, state.pake)
+        process_pake(neg, state, state.pake, state.peer_side)
     )
     print("BOTH", events)
     return events
@@ -152,13 +157,22 @@ def finish_pake(neg: KeySetupZero, state: KeySetupState, code: str) -> list[KeyS
 @have_alleged_key.upon(KeySetupZero.received_version).to(done)
 def finalize(inputs: KeySetupZero, state: KeySetupState, body: bytes) -> list[KeySetupOutput]:
     print("finalize", body)
-    return [Done(state.key, body)]
+    print("KEY", state.key, state.side)
+    version_key = derive_phase_key(state.key, state.peer_side, "version")
+    try:
+        plaintext = decrypt_data(version_key, body)
+        print("plain", plaintext)
+        return [Done(state.key, body)]
+    except CryptoError:
+        return [
+            Error("Decryption of version message failed")
+        ]
 
 key_setup_factory = builder.build()
 
 def key_setup_v0(side, appid, app_versions):
     machine = key_setup_factory(
-        KeySetupState(side, appid, app_versions),
+        KeySetupState(side, appid, app_versions, None),
     )
     return machine
 
@@ -193,7 +207,7 @@ class KeySetup_V0:
             self._msg1 = self._sp.start()
         self._wanted = "pake"
         self._process()
-        return {"pake_v1": bytes_to_hexstr(self._msg1)}
+        return [Send("pake", dict_to_bytes({"pake_v1": bytes_to_hexstr(self._msg1)}))]
 
     def input(self, side, phase, body):
         assert isinstance(side, str), type(phase)
@@ -240,6 +254,7 @@ class KeySetup_V0:
 
     def _process_version(self, side, phase, body):
         assert self._key
+        print("PROCESS VERSION", side, phase, body)
         data_key = derive_phase_key(self._key, side, phase)
         try:
             plaintext = decrypt_data(data_key, body)

@@ -229,7 +229,7 @@ def test_happy_path_nicer():
     cores.got_code(CODE)
     cores.finish()
 
-    assert cores.get_transcript("side_a") == cores.get_transcript("side_b"), "Keys do not match"
+    assert find_key(cores.get_transcript("side_a")) == find_key(cores.get_transcript("side_b")), "Keys do not match"
 
 def test_reversed_refactored():
     """
@@ -249,7 +249,7 @@ def test_reversed_refactored():
     cores.got_code(CODE, "side_a")
 
     cores.finish()
-    assert cores.get_transcript("side_a") == cores.get_transcript("side_b"), "Keys do not match"
+    assert find_key(cores.get_transcript("side_a")) == find_key(cores.get_transcript("side_b")), "Keys do not match"
 
 def test_ignored_phase_refactored(observe_errors):
     """
@@ -272,7 +272,7 @@ def test_ignored_phase_refactored(observe_errors):
     assert er[0].getErrorMessage() == "received unknown phase 'ignored_phase'"
     assert len(er) == 1
 
-    assert cores.get_transcript("side_a") == cores.get_transcript("side_b"), "Keys do not match"
+    assert find_key(cores.get_transcript("side_a")) == find_key(cores.get_transcript("side_b")), "Keys do not match"
 
 
 def test_good_key():
