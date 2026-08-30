@@ -52,13 +52,8 @@ class M_AddMessage:
     phase: str
     body: bytes
 
-@frozen
-class Done:
-    key: bytes
-    version_data: bytes
-
 InputMessage = B_GotMessage | B_GotVerifier | B_Scared | B_Happy | B_GotKey
-OutputMessage = M_AddMessage | Done
+OutputMessage = M_AddMessage
 
 CoreOutput = B_GotKey | B_Happy | B_Scared | B_GotVerifier | B_GotMessage | M_AddMessage
 
@@ -82,9 +77,8 @@ class _EncryptionCore:
         self._queued_sends = []
         self._outputs: list[CoreOutput] = []
         ks0 = KeySetup_V0(self._side, self._appid, self._app_versions, self._timing)
-        self._key_setup = IKeySetup(ks0)
-        ##self._negotiation = INegotiation(ks0)
-        self._negotiation = negotiate_v0(self._side, self._appid, self._app_versions)
+        ##self._key_setup = IKeySetup(ks0)
+        self._key_setup = key_setup_v0(self._side, self._appid, self._app_versions)
 
     def _add_output(self, ev):
         self._outputs.append(ev)
@@ -133,11 +127,8 @@ class _EncryptionCore:
     def got_code(self, code):
         # self._have_code enables delivery of inbound key-setup messages
         self._have_code = True
-        pieces = self._key_setup.start(code)
-        body = dict_to_bytes(pieces)
-        # todo: just call self._M.add_message here (instead of output-message etc dance?)
-        self._add_output(M_AddMessage("pake", body)) # PAKE
-        self._process_key_setup()
+        messages = self._key_setup.start(code)
+        self._process_key_setup(messages)
 
     def _be_scared(self):
         self._scared = True
@@ -153,21 +144,24 @@ class _EncryptionCore:
         if self._scared:
             return []
         # TODO: make sure side means not crowded
+        outputs = []
         if is_key_setup(phase):
             try:
-                self._key_setup.input(side, phase, body) # can throw
                 if phase == "pake":
-                    return self._negotiation.received_pake(body)
+                    outputs = self._key_setup.received_pake(body)
                 elif phase == "version":
-                    return self._negotiation.received_version(body)
+                    outputs = self._key_setup.received_version(body)
+                print("outputs", outputs)
             except (WrongPasswordError, CausalityError):
                 self._be_scared()
                 return [B_Scared()]
                 #return self._get_outputs() # TODO: want B.scared, maybe don't want others
-            # Could get CrowdedError but only if Mailbox misbehaved.
-            # Note that all errors in received messages (ws_message)
-            # will mark the Boss as ERRORY, which stops everything
-            self._process_key_setup()
+            else:
+                # Could get CrowdedError but only if Mailbox misbehaved.
+                # Note that all errors in received messages (ws_message)
+                # will mark the Boss as ERRORY, which stops everything
+                print("OUTPUTS", outputs)
+                self._process_key_setup(outputs)
         elif is_dilation(phase) or is_numeric(phase):
             self._queued_received_encrypted.append((side, phase, body))
             if self._key:
@@ -176,7 +170,7 @@ class _EncryptionCore:
             # unknown non-numeric phase: spec says to ignore. log.err
             # will flunk unit tests but should be invisible to apps
             log.err(_UnknownPhaseError(f"received unknown phase '{phase}'"))
-        return []
+        return outputs
 
     def _drain_queued_received_encrypted(self):
         assert self._key
@@ -256,16 +250,13 @@ class Encryption:
 
     # input from Boss
     def got_code(self, code):
-        events = self._core.got_code(code)
-        print("got code", code, events)
-        self._events.extend(events)
+        self._core.got_code(code)
         self._process_events()
 
     # input from Mailbox
     def got_message(self, side, phase, body):
         self._test_count_received_messages += 1
-        events = self._core.got_message(side, phase, body)
-        self._events.extend(events)
+        self._core.got_message(side, phase, body)
         self._process_events()
 
     # input from Boss and Dilation

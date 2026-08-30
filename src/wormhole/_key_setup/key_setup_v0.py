@@ -65,22 +65,29 @@ class KeySetupState:
     app_versions: dict
     key: bytes | None = None
     spake: SPAKE2_Symmetric | None = None
+    # stash our pake if we get received_pake() before start()
+    pake: bytes | None = None
+    # stash the peer's version message if it arrives before the pake
+    version: bytes | None = None
 
 
 
-def remember_message(inputs: KeySetupZero, state: KeySetupState, message: InputMessage) -> InputMessage | None:
-    print("REMEMERM", message)
-    return message
-
-
-builder = automat.TypeMachineBuilder(Negotiate, KeySetupState)
+builder = automat.TypeMachineBuilder(KeySetupZero, KeySetupState)
 idle = builder.state("idle")
-want_pake = builder.state("want_pake")#, remember_message)
+want_pake = builder.state("want_pake")
+want_pake_have_version = builder.state("want_pake_have_version")
+want_start = builder.state("want_start")
 have_alleged_key = builder.state("have_alleged_key")
 done = builder.state("done")
+error = builder.state("error")
 
-@idle.upon(Negotiate.start).to(want_pake)
-def init_state(neg: Negotiate, state: KeySetupState, code: str) -> dict:
+@idle.upon(KeySetupZero.received_pake).to(want_start)
+def stash_pake(neg: KeySetupZero, state: KeySetupState, body: bytes) -> list[KeySetupOutput]:
+    state.pake = body
+    return []
+
+@idle.upon(KeySetupZero.start).to(want_pake)
+def init_state(neg: KeySetupZero, state: KeySetupState, code: str) -> list[KeySetupOutput]:
     # i think we can set stuff in 'state' here and it propagates?
     code_b = to_bytes(code)
     id_b = to_bytes(state.app_id)
@@ -91,8 +98,8 @@ def init_state(neg: Negotiate, state: KeySetupState, code: str) -> dict:
         "pake_v1": bytes_to_hexstr(msg1),
     }
 
-@want_pake.upon(Negotiate.received_pake).to(have_alleged_key)
-def process_pake(inputs: Negotiate, state: KeySetupState, body: bytes) -> list[OutputMessage]:
+@want_pake.upon(KeySetupZero.received_pake).to(have_alleged_key)
+def process_pake(inputs: KeySetupZero, state: KeySetupState, body: bytes) -> list[KeySetupOutput]:
     payload = bytes_to_dict(body)
     msg2 = hexstr_to_bytes(payload["pake_v1"])
     print("PROCESSPAKE", state.spake)
@@ -102,23 +109,47 @@ def process_pake(inputs: Negotiate, state: KeySetupState, body: bytes) -> list[O
     data_key = derive_phase_key(state.key, state.side, "version")
     plaintext = dict_to_bytes(state.app_versions)
     encrypted = encrypt_data(data_key, plaintext)
-    return [M_AddMessage("version", encrypted)]
+    return [
+        HaveAllegedKey(state.key),
+        Send("version", encrypted),
+    ]
 
-@have_alleged_key.upon(Negotiate.received_versions).to(done)
-def finalize(inputs: Negotiate, state: KeySetupState):
-    print("finalize")
+@want_pake_have_version.upon(KeySetupZero.received_pake).to(done)
+def process_pake_and_version(inputs: KeySetupZero, state: KeySetupState, body: bytes) -> list[KeySetupOutput]:
+    outputs = process_pake(inputs, state, body)
+    outputs.extend(
+        finalize(inputs, state, state.version)
+    )
+    return outputs
 
-negotiate_factory = builder.build()
+@want_start.upon(KeySetupZero.start).to(have_alleged_key)
+def finish_pake(neg: KeySetupZero, state: KeySetupState, code: str) -> list[KeySetupOutput]:
+    # this does both the init_state() stuff and the process_pake stuff
+    # (with the stashed pake value) ... can we simply call those other
+    # functions as-is??
+    events = init_state(neg, state, code)
+    events.extend(
+        process_pake(neg, state, state.pake)
+    )
+    print("BOTH", events)
+    return events
 
-def negotiate_v0(side, appid, app_versions):
-    machine = negotiate_factory(
+@have_alleged_key.upon(KeySetupZero.received_version).to(done)
+def finalize(inputs: KeySetupZero, state: KeySetupState, body: bytes) -> list[KeySetupOutput]:
+    print("finalize", body)
+    return [Done(state.key, body)]
+
+key_setup_factory = builder.build()
+
+def key_setup_v0(side, appid, app_versions):
+    machine = key_setup_factory(
         KeySetupState(side, appid, app_versions),
     )
     return machine
 
 
-@implementer(INegotiation)
-class Negotiate_V0:
+@implementer(IKeySetup)
+class KeySetup_V0:
     def __init__(self, side, appid, app_versions, timing):
         self._side = side
         self._appid = appid
@@ -177,7 +208,7 @@ class Negotiate_V0:
                 raise AssertionError("unhandled phase %s" % self._wanted)
 
     def _process_pake(self, side, phase, body):
-        print("HAHA")
+        print("process_pake", side, phase)
         payload = bytes_to_dict(body)
         msg2 = hexstr_to_bytes(payload["pake_v1"])
         assert isinstance(msg2, bytes)

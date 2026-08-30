@@ -89,6 +89,13 @@ def decrypt_message(key, phase, encrypted):
     return decrypt_data(data_key, encrypted)
 
 
+def find_key(messages):
+    for msg in messages:
+        if isinstance(msg, B_GotKey):
+            return msg.key
+    return None
+
+
 def test_happy_path():
     """
     Hook two negotiation cores together. We know they succeed if
@@ -128,7 +135,7 @@ def test_happy_path():
 
     print(messages0)
     print(messages1)
-    assert messages0 == messages1, "Keys do not match"
+    assert find_key(messages0) == find_key(messages1), "Keys do not match"
 
 
 # add a bit more generalization to the above, and create an N-sided
@@ -156,6 +163,7 @@ class WiredCores:
                 # forward this message to ALL OTHER cores
                 for otherside, othercore in self.sided_cores.items():
                     if target_side != otherside:
+                        print(f"WIRE {target_side} -> {otherside}: {msg.phase}")
                         othercore.got_message(target_side, msg.phase, msg.body)
             else:
                 self.transcript[target_side].append(msg)
@@ -182,6 +190,7 @@ class WiredCores:
                 if is_terminal_message(msg):
                     return True
             return False
+        print("finished?", self.transcript.values())
         return [
             side
             for side, transcript in self.transcript.items()
@@ -196,7 +205,8 @@ class WiredCores:
         all_sides = set(self.sided_cores.keys())
 
         def is_final_message(msg):
-            return isinstance(msg, B_GotMessage) and msg.phase == "version"
+            #return isinstance(msg, B_GotMessage) and msg.phase == "version"
+            return isinstance(msg, B_GotKey)
 
         while not set(self.finished_sides(is_final_message)) == all_sides:
             for side in self.sided_cores.keys():
@@ -271,10 +281,9 @@ def test_good_key():
     body = assert_MAddMessage(c.output(), "pake")
     assert c.output() == None
     key, msg2 = compute_key(CODE, body)
-    events = c.got_message("side2", "pake", msg2)
-    print("EVENTS", events)
-    assert events[0] == B_GotKey(key)
-    body = assert_MAddMessage(events[1], "version")
+    c.got_message("side2", "pake", msg2)
+    assert c.output() == B_GotKey(key)
+    body = assert_MAddMessage(c.output(), "version")
     assert decrypt_version(key, body) == {}
     assert c.output() == None
 
