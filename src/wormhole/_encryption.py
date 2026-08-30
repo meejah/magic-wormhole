@@ -10,7 +10,7 @@ from .util import (dict_to_bytes,
                    derive_key, derive_phase_key,
                    encrypt_data, decrypt_data, CryptoError)
 from .errors import WrongPasswordError, CausalityError, _UnknownPhaseError
-from ._key_setup.ikeysetup import IKeySetup, Send, HaveAllegedKey, Done
+from ._key_setup.ikeysetup import IKeySetup, Send, HaveAllegedKey, Done, Error
 from ._key_setup.key_setup_v0 import KeySetup_V0, key_setup_v0
 
 __all__ = ["Encryption", "_EncryptionCore"]
@@ -120,6 +120,10 @@ class _EncryptionCore:
                     self._add_output(B_GotMessage("version", version_bytes))
                     self._drain_queued_received_encrypted()
                     self._drain_queued_sends()
+                case Error(message):
+                    self._key = None
+                    self._add_output(B_Scared())
+                    print(f"Error: {message}")
                 case _:
                     raise ValueError("unknown KeySetupOutput")
 

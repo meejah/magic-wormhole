@@ -8,7 +8,7 @@ from ..util import (bytes_to_dict, bytes_to_hexstr, dict_to_bytes,
                     hexstr_to_bytes, to_bytes, derive_phase_key,
                     encrypt_data, decrypt_data, CryptoError)
 from ..errors import CrowdedError, WrongPasswordError, CausalityError
-from .ikeysetup import IKeySetup, Send, HaveAllegedKey, Done, KeySetupOutput
+from .ikeysetup import IKeySetup, Send, HaveAllegedKey, Done, KeySetupOutput, Error
 
 # This is the retroactively-named "v0" key-setup protocol: the initial
 # one used by all versions of magic-wormhole, at least through the
@@ -94,9 +94,24 @@ def init_state(neg: KeySetupZero, state: KeySetupState, code: str) -> list[KeySe
     state.spake = SPAKE2_Symmetric(code_b, idSymmetric=id_b)
     print("INIT", state.spake)
     msg1 = state.spake.start()
-    return {
-        "pake_v1": bytes_to_hexstr(msg1),
-    }
+    return [
+        Send("pake", dict_to_bytes({"pake_v1": bytes_to_hexstr(msg1)})),
+    ]
+
+@idle.upon(KeySetupZero.received_version).to(error)
+def causality_violation(neg: KeySetupZero, state: KeySetupState, body: bytes) -> list[KeySetupOutput]:
+    # just to be sure ...
+    state.pake = None
+    state.version = None
+    state.key = None
+    return [
+        Error("causality violation")
+    ]
+
+@want_pake.upon(KeySetupZero.received_version).to(want_pake_have_version)
+def stash_version(inputs: KeySetupZero, state: KeySetupState, version: bytes) -> list[KeySetupOutput]:
+    state.version = version
+    return []
 
 @want_pake.upon(KeySetupZero.received_pake).to(have_alleged_key)
 def process_pake(inputs: KeySetupZero, state: KeySetupState, body: bytes) -> list[KeySetupOutput]:

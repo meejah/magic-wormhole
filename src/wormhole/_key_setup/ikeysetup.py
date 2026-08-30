@@ -28,7 +28,11 @@ class Done:
     key: bytes
     version_data: bytes
 
-KeySetupOutput = Send | HaveAllegedKey | Done
+@frozen
+class Error:
+    message: str
+
+KeySetupOutput = Send | HaveAllegedKey | Done | Error
 
 class IKeySetup(Interface):
     def start(code: str) -> dict:
