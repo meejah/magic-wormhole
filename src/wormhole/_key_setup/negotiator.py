@@ -3,7 +3,7 @@ from zope.interface import implementer
 from . import inegotiator, ikeysetup
 from .next_phase import next_phase
 from .spake2_helper import SPAKE2_Helper
-from .key_setup_v0 import KeySetup_V0
+from .key_setup_v0 import KeySetup_V0, create_keysetup_v0
 from .key_setup_v1 import KeySetup_V1
 from .key_setup_v2 import KeySetup_V2
 from .._interfaces import ITiming
@@ -21,7 +21,7 @@ KEY_SETUP_VERSIONS = ["v0", "v1", "v2"]
 
 # the constructors are sampled too, for unit tests
 KEY_SETUP_CONSTRUCTORS = {
-    "v0": KeySetup_V0,
+    "v0": create_keysetup_v0, ##KeySetup_V0,
     "v1": KeySetup_V1,
     "v2": KeySetup_V2,
 }
