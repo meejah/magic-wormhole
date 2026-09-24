@@ -55,7 +55,7 @@ setup(name="magic-wormhole",
           "twisted[tls] >= 17.5.0", # 17.5.0 adds failAfterFailures=
           "autobahn[twisted] >= 0.14.1, != 25.9.1, != 25.10.1, != 25.10.2, != 25.11.1, != 25.12.1",
           "automat",
-          "cryptography",
+          "cryptography >= 47.0.0",  # ML-KEM introduced in 47.0.0
           "tqdm >= 4.13.0", # 4.13.0 fixes crash on NetBSD
           "click",
           "humanize",
