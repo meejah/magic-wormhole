@@ -50,15 +50,8 @@ class KeySetup(typing.Protocol):
     def start_pake1(self, code: str, their_side: str, pake0mt: MessageTuple) -> list[KeySetupAction]:
         pass
 
-    # HMMmmm, okay so these "multiplex" states in Automat can only
-    # return None, not a list of actions ... so we "have" to make
-    # "input" a helper function or something instead, so got_pake and
-    # got_version can be real / normal automat inputs and return
-    # something useful
-
-    # TODO: because the above is just a way to multiplex depending on
-    # (mostly) the phase argument, we could just make the below
-    # not-private and 'the' API instead
+    # could do "got_pake1()" etc and get rid of "phase" argument.. but
+    # then we need to change API every time there's more messages?
     def got_pake(self, phase: int, body: bytes) -> list[KeySetupAction]:
         pass
 
