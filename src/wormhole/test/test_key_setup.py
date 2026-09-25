@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives.asymmetric import mlkem
 from .. import errors, timing
 from ..util import derive_phase_key, decrypt_data, encrypt_data, HKDF
 from .._key_setup.hash_transcript import hash_transcript
-from .._key_setup.key_setup_v0 import KeySetup_V0
+from .._key_setup.key_setup_v0 import create_keysetup_v0
 from .._key_setup.key_setup_v1 import KeySetup_V1
 from .._key_setup.key_setup_v2 import KeySetup_V2
 from .._key_setup.ikeysetup import (Send, HaveAllegedKey, Done)
@@ -55,7 +55,7 @@ def _test_v0(side_known_early, version_is_good):
 
     # this is us
     #t = Transcript()
-    ks = KeySetup_V0(side1, appid, app_versions, timing.DebugTiming())
+    ks = create_keysetup_v0(side1, appid, app_versions, timing.DebugTiming())
 
     # A: trigger the KeySetup to help us build the PAKE message
     side_early = side2 if side_known_early else None
@@ -118,7 +118,7 @@ def test_v0_wrong_password():
     _test_v0(side_known_early=False, version_is_good=False)
 
 def test_v0_errors():
-    ks = KeySetup_V0(side1, appid, app_versions, timing.DebugTiming())
+    ks = create_keysetup_v0(side1, appid, app_versions, timing.DebugTiming())
     pake0 = (side1, "pake", b"body")
     with pytest.raises(ValueError, match="v0 cannot be started late"):
         ks.start_pake1(code, side2, pake0)

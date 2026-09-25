@@ -103,6 +103,7 @@ class _EncryptionCore:
     _scared = False # or True
 
     def __attrs_post_init__(self):
+
         self._outputs: list[CoreActions] = []
         # these queues are held until we have a verified key
         self._queued_received_encrypted = []

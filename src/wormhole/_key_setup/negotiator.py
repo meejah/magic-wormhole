@@ -3,7 +3,7 @@ from zope.interface import implementer
 from . import inegotiator, ikeysetup
 from .next_phase import next_phase
 from .spake2_helper import SPAKE2_Helper
-from .key_setup_v0 import KeySetup_V0, create_keysetup_v0
+from .key_setup_v0 import create_keysetup_v0
 from .key_setup_v1 import KeySetup_V1
 from .key_setup_v2 import KeySetup_V2
 from .._interfaces import ITiming
@@ -257,7 +257,8 @@ class Negotiator:
             case Speculating(code, panel, pake0):
                 if version in panel: # lucky
                     key_setup = panel[version]
-                    wanted = key_setup.submit_outbound_pake0(pake0)
+                    key_setup.submit_outbound_pake0(pake0)
+                    wanted = "pake"
                 else: # unlucky
                     key_setup = self._build_negotiator(version)
                     (wanted, actions) = key_setup.start_pake1(code, their_side, pake0)

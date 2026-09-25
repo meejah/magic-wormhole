@@ -4,7 +4,7 @@ from zope.interface import implementer
 from .. import timing
 from .._key_setup.negotiator import negotiate, Negotiator
 from .._key_setup import ikeysetup, inegotiator
-from .._key_setup.key_setup_v0 import KeySetup_V0
+from .._key_setup.key_setup_v0 import create_keysetup_v0
 from .._key_setup.key_setup_v1 import KeySetup_V1
 from ..util import dict_to_bytes
 
@@ -99,7 +99,7 @@ timing = timing.DebugTiming()
 
 def test_v0_ABCD_basic():
     fv0 = FakeKeySetup()
-    ks0c = mock.create_autospec(KeySetup_V0)
+    ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
     with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
           mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
@@ -153,7 +153,7 @@ def test_v0_ABCD_basic():
 
 def test_v0_ABDC():
     fv0 = FakeKeySetup()
-    ks0c = mock.create_autospec(KeySetup_V0)
+    ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
     with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
           mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
@@ -216,7 +216,7 @@ def test_v0_ABDC():
 
 def test_v0_ACBD():
     fv0 = FakeKeySetup()
-    ks0c = mock.create_autospec(KeySetup_V0)
+    ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
     with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
           mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
@@ -267,7 +267,7 @@ def test_v0_ACBD():
 
 def test_v0_BACD():
     fv0 = FakeKeySetup()
-    ks0c = mock.create_autospec(KeySetup_V0)
+    ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
     with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
           mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
@@ -318,7 +318,7 @@ def test_v0_BACD():
 
 def test_v0_BADC():
     fv0 = FakeKeySetup()
-    ks0c = mock.create_autospec(KeySetup_V0)
+    ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
     with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
           mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
@@ -376,7 +376,7 @@ def test_v0_BADC():
 
 def test_v0_BCAD():
     fv0 = FakeKeySetup()
-    ks0c = mock.create_autospec(KeySetup_V0)
+    ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
     with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
           mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
@@ -430,7 +430,7 @@ def test_v0_BCAD():
 
 def test_v0_CBAD():
     fv0 = FakeKeySetup()
-    ks0c = mock.create_autospec(KeySetup_V0)
+    ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
     with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
           mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
