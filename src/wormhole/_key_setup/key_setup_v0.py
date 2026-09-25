@@ -46,23 +46,23 @@ class KeySetup(typing.Protocol):
 
     def submit_outbound_pake0(self, pake0mt: MessageTuple) -> list[KeySetupAction]:
         pass
-    
+
     def start_pake1(self, code: str, their_side: str, pake0mt: MessageTuple) -> list[KeySetupAction]:
         pass
 
-    # FIXME: refactor (separate methods for different phase strings)
-    # got_version(body: bytes)
-    # got_pake(phase: int, body: bytes)
-    def input(self, side: str, phase: str, body: bytes) -> list[KeySetupAction]:
-        pass
+    # HMMmmm, okay so these "multiplex" states in Automat can only
+    # return None, not a list of actions ... so we "have" to make
+    # "input" a helper function or something instead, so got_pake and
+    # got_version can be real / normal automat inputs and return
+    # something useful
 
     # TODO: because the above is just a way to multiplex depending on
     # (mostly) the phase argument, we could just make the below
     # not-private and 'the' API instead
-    def _got_pake(self, phase: int, body: bytes) -> list[KeySetupAction]:
+    def got_pake(self, phase: int, body: bytes) -> list[KeySetupAction]:
         pass
 
-    def _got_version(self, body: bytes) -> list[KeySetupAction]:
+    def got_version(self, body: bytes) -> list[KeySetupAction]:
         pass
 
 
@@ -92,7 +92,7 @@ def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any
     verifying_key = builder.state("verifying_key")
     done = builder.state("done")
 
-    @want_pake.upon(KeySetup._got_pake).to(want_version)
+    @want_pake.upon(KeySetup.got_pake).to(want_version)
     def process_pake(inputs: KeySetup, core: KeySetupState, phase: int, body: bytes) -> [KeySetupAction]:
         if phase != 0:
             raise ValueError("Unknown PAKE phase {}".format(phase))
@@ -103,10 +103,10 @@ def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any
         # key and go into "confirming" mode
         msg2 = hexstr_to_bytes(payload["pake_v1"])
         assert isinstance(msg2, bytes)
-        with core._timing.add("pake2", waiting="crypto"):
+        with core.timing.add("pake2", waiting="crypto"):
             core.key = core.spake2_helper.finish(msg2)
         # create and encrypt our VERSION verification message
-        data_key = derive_phase_key(core.key, core._side, "version")
+        data_key = derive_phase_key(core.key, core.side, "version")
         plaintext = dict_to_bytes(core.app_versions)
         encrypted = encrypt_data(data_key, plaintext)
 
@@ -114,10 +114,11 @@ def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any
             ikeysetup.HaveAllegedKey(),
             ikeysetup.Send(core.side, "version", encrypted),
         ]
-    
-    @want_version.upon(KeySetup._got_version).to(done)
+
+    @want_version.upon(KeySetup.got_version).to(done)
     def process_version(inputs: KeySetup, core: KeySetupState, body: bytes) -> [KeySetupAction]:
-        data_key = derive_phase_key(core.key, core.side, "version")
+        print("process version")
+        data_key = derive_phase_key(core.key, core.their_side, "version")
         try:
             plaintext = decrypt_data(data_key, body)
         except CryptoError:
@@ -125,8 +126,8 @@ def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any
             raise core._error
         return [ikeysetup.Done(core.key, plaintext)]
 
-    @want_pake.upon(KeySetup.input).loop()
-    def parse_message(inputs: KeySetup, core: KeySetupState, side: str, phase: str, body: bytes) -> [KeySetupAction]:
+    # bump this out of here it's not really "state-machine" stuff
+    def parse_message(side: str, phase: str, body: bytes) -> list[KeySetupAction]:
         """
         fact-check and de-multiplex this input, possibly causing some of
         the private inputs to be triggered on this state machine. may
@@ -138,12 +139,12 @@ def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any
         assert isinstance(side, str), type(phase)
         assert isinstance(phase, str), type(phase)
         assert isinstance(body, bytes), type(body)
-        if core.their_side is None:
-            core.their_side = side
-        if core.their_side != side:
-            core._error = core._error or CrowdedError()
-        if core._error:
-            raise core._error
+        if state.their_side is None:
+            state.their_side = side
+        if state.their_side != side:
+            state._error = state._error or CrowdedError()
+        if state._error:
+            raise state._error
         actions = False
         next_wanted = False
 
@@ -151,11 +152,10 @@ def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any
             pake_phase = 0
             if "-" in phase:
                 pake_phase = int(phase.split("-", 2)[1])
-            inputs._got_pake(pake_phase, body)
+            return machine.got_pake(pake_phase, body)
         elif phase == "version":
-            inputs._got_version(body)
-        else:
-            raise RuntimeError("illegal phase '{}' during key setup".format(phase))
+            return machine.got_version(body)
+        raise RuntimeError("illegal phase '{}' during key setup".format(phase))
 
     @init.upon(KeySetup.start_pake0).to(started_early)
     def start_pake0(inputs: KeySetup, core: KeySetupState, code: str, their_side: str) -> dict:
@@ -173,9 +173,14 @@ def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any
         v0 doesn't use a transcript so we don't actually look at the
         message at all
         """
+        return "pake"
 
     machine_factory = builder.build()
-    machine = machine_factory(
-        KeySetupState(side, appid, app_versions, timing, spake2_helper),
-    )
+    state = KeySetupState(side, appid, app_versions, timing, spake2_helper)
+    machine = machine_factory(state)
+
+    # hack to keep the same API; this can go away if we bump the
+    # "parse_message" logic up to negotiator
+    machine.input = parse_message
+
     return machine

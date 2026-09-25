@@ -116,9 +116,10 @@ def test_good_key():
     vbytes2 = dict_to_bytes(app_versions2)
     version2 = encrypt_version(key, app_versions2)
     actions = c.got_message("side2", "version", version2)
-    assert actions.pop(0) == B_Happy(key)
-    assert actions.pop(0) == B_GotAppVersions(vbytes2)
-    assert actions == []
+    assert actions == [
+        B_Happy(key),
+        B_GotAppVersions(vbytes2),
+    ]
 
 # A receiver using input_code() will choose the nameplate first, then
 # the rest of the code. Once the nameplate is selected, we'll claim it

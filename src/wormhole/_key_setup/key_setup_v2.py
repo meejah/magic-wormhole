@@ -179,7 +179,8 @@ class KeySetup_V2:
         self._next_outbound_phase = "pake-2"
         wanted = "pake"
         self._state = WantPAKE(wanted)
-        return (wanted, [send])
+        return [send]
+#        return (wanted, [send])
 
     def input(self, side: str, phase: str, body: bytes) -> NextKeySetupInput:
         #print("INPUT(%s)" % phase)
@@ -251,7 +252,7 @@ class KeySetup_V2:
                 #      "have keys: ",
                 #      "spake2 " if self._spake2_key else "",
                 #      "mlkem " if self._mlkem_key else "")
-                
+
                 assert self._spake2_key or self._want_spake2
                 assert self._mlkem_key or (self._want_mlkem_pubkey or self._want_mlkem_ct)
                 if self._spake2_key and self._mlkem_key:
@@ -305,7 +306,8 @@ class KeySetup_V2:
                 raise ValueError("bad state")
         assert isinstance(actions, list)
         assert next_wanted != False
-        return actions, next_wanted
+        print("DINGDING", next_wanted)
+        return actions#, next_wanted
 
     def _compute_session_key(self):
         t_hash = hash_transcript(self.VERSION, self._transcript)

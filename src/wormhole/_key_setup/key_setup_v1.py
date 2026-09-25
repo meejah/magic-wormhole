@@ -97,6 +97,7 @@ class KeySetup_V1:
         self._next_outbound_phase = "pake-2" # for pre-version
         wanted = "pake"
         self._state = WantPAKE(wanted)
+        return [send]
         return (wanted, [send])
 
     def input(self, side: str, phase: str, body: bytes) -> NextKeySetupInput:
@@ -173,7 +174,7 @@ class KeySetup_V1:
                 raise ValueError("bad state")
         assert isinstance(actions, list)
         assert next_wanted != False
-        return actions, next_wanted
+        return actions#, next_wanted
 
     def _compute_session_key(self, spake2_key):
         t_hash = hash_transcript(self.VERSION, self._transcript)
