@@ -89,7 +89,6 @@ def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any
 
     @want_version.upon(KeySetup.got_version).to(done)
     def process_version(inputs: KeySetup, core: KeySetupState, body: bytes) -> [KeySetupAction]:
-        print("process version")
         data_key = derive_phase_key(core.key, core.their_side, "version")
         try:
             plaintext = decrypt_data(data_key, body)

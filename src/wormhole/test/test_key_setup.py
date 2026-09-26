@@ -231,7 +231,6 @@ def test_v2():
 
     # A: trigger the KeySetup to help us build the PAKE message
     pieces = ks.start_pake0(code, side2)
-    print("PIECES", pieces)
     assert "pake_v1" in pieces
     assert "v2_mlkem_pubkey" in pieces
     pake0 = make_pake0(pieces, ["v2"])

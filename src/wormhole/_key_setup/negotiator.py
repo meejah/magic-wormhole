@@ -131,7 +131,6 @@ class Negotiator:
         return panel, pake0
 
     def _build_negotiator(self, version):
-        print("_build_negotiator", version)
         # for now, all versions need a SPAKE2
         with self._timing.add("pake1", waiting="crypto"):
             sph = SPAKE2_Helper(self._appid)
@@ -175,7 +174,6 @@ class Negotiator:
     def _drain_inbound(self):
         assert isinstance(self._state, Negotiating)
         ks = self._state.key_setup
-        print("WANT", self._state.wanted, list(self._queued_inbound.keys()))
         while self._state.wanted in self._queued_inbound:
             assert isinstance(self._state, Negotiating) # Done should clear wanted
             phase = self._state.wanted

@@ -160,7 +160,6 @@ class _EncryptionCore:
         assert isinstance(side, str), type(phase)
         assert isinstance(phase, str), type(phase)
         assert isinstance(body, bytes), type(body)
-        print("GM", side, phase, body)
         if self._scared:
             return self._get_actions()
         if not self._their_side:
