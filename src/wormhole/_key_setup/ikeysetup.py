@@ -18,6 +18,14 @@ class Send:
 class HaveAllegedKey:
     pass
 
+@frozen
+class WantVersion:
+    """
+    We're done with the PAKE phase and are prepared to receive the
+    VERSION message for decryption
+    """
+    pass
+
 # Done indicates the key has been verified and key-setup is
 # complete. The action includes the session key and the decrypted
 # VERSION message (as bytes). "Done" is terminal: no further actions
@@ -31,7 +39,7 @@ class Done:
     key: bytes
     version_data: bytes
 
-KeySetupAction = Send | HaveAllegedKey | Done
+KeySetupAction = Send | HaveAllegedKey | WantVersion | Done
 KeySetupActions = list[KeySetupAction]
 NextKeySetupInput = tuple[KeySetupActions, str | None] # (actions, wanted)
 MessageTuple = tuple[str, str, bytes] # (side, phase, body)
