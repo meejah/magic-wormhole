@@ -80,7 +80,7 @@ def _test_v0(side_known_early, version_is_good):
 
     # B: feed it a PAKE, it should get an alleged key and transmit a VERSION
     #t.add_output(ks, side2, "pake", msg2)
-    (actions, wanted) = ks.input(side2, "pake", msg2)
+    actions = ks.input(side2, "pake", msg2)
     assert actions.pop(0) == HaveAllegedKey()
     s = actions.pop(0)
     assert isinstance(s, Send)
@@ -88,7 +88,6 @@ def _test_v0(side_known_early, version_is_good):
     assert s.phase == "version"
     outbound_version_bytes = s.body
     assert actions == []
-    assert wanted == "version"
 
     # verify outbound VERSION
     side1_version_key = derive_phase_key(key, side1, "version")
@@ -98,10 +97,9 @@ def _test_v0(side_known_early, version_is_good):
 
     # C: submit a VERSION, and it should verify it
     if version_is_good:
-        (actions, wanted) = ks.input(side2, "version", good_inbound_version_bytes)
+        actions = ks.input(side2, "version", good_inbound_version_bytes)
         assert actions.pop(0) == Done(key, side2_version_bytes)
         assert actions == []
-        assert wanted == None
     else:
         with pytest.raises(errors.WrongPasswordError):
             ks.input(side2, "version", bad_inbound_version_bytes)
@@ -120,7 +118,8 @@ def test_v0_wrong_password():
 def test_v0_errors():
     ks = create_keysetup_v0(side1, appid, app_versions, timing.DebugTiming())
     pake0 = (side1, "pake", b"body")
-    with pytest.raises(ValueError, match="v0 cannot be started late"):
+    import automat  # FIXME when other machines built out
+    with pytest.raises(automat._core.NoTransition):
         ks.start_pake1(code, side2, pake0)
     with pytest.raises(AssertionError):
         ks.input(b"non-str side", "phase", b"body")
@@ -128,7 +127,7 @@ def test_v0_errors():
         ks.input("side", b"non-str phase", b"body")
     with pytest.raises(AssertionError):
         ks.input("side", "phase", "non-bytes body")
-    with pytest.raises(ValueError, match=re.escape("input() before start")):
+    with pytest.raises(RuntimeError, match=re.escape("illegal phase")):
         # this gets far enough to register side2
         ks.input(side2, "phase", b"body")
     with pytest.raises(errors.CrowdedError):
@@ -162,7 +161,7 @@ def _test_v1(side_known_early, version_is_good):
     pre_version = dict_to_bytes({"our_key_setup_version": "v1"})
     t.add(side2, "pake", msg2)
     # B: feed it a PAKE, it should get an alleged key and transmit a pre-VERSION
-    (actions, wanted) = ks.input(side2, "pake", msg2)
+    actions = ks.input(side2, "pake", msg2)
     assert actions.pop(0) == HaveAllegedKey()
     assert actions.pop(0) == Send(side1, "pake-1", pre_version)
     # the pre-version does not go into the transcript, nor does VERSION
@@ -172,7 +171,6 @@ def _test_v1(side_known_early, version_is_good):
     assert s.phase == "version"
     outbound_version_bytes = s.body
     assert actions == []
-    assert wanted == "pake-1"
 
     # extract its SPAKE2 public value, and complete the protocol
     spake2_key = sp.finish(hexstr_to_bytes(pieces["pake_v1"]))
@@ -196,16 +194,14 @@ def _test_v1(side_known_early, version_is_good):
     bad_inbound_version_bytes = encrypt_data(side2_bad_version_key, side2_version_bytes)
 
     # C: submit the pre-version, should not explode
-    (actions, wanted) = ks.input(side2, "pake-1", pre_version)
+    actions = ks.input(side2, "pake-1", pre_version)
     assert actions == []
-    assert wanted == "version"
 
     # d: submit the VERSION, and it should verify it
     if version_is_good:
-        (actions, wanted) = ks.input(side2, "version", good_inbound_version_bytes)
+        actions = ks.input(side2, "version", good_inbound_version_bytes)
         assert actions.pop(0) == Done(key, side2_version_bytes)
         assert actions == []
-        assert wanted == None
     else:
         with pytest.raises(errors.WrongPasswordError):
             ks.input(side2, "version", bad_inbound_version_bytes)
@@ -269,7 +265,7 @@ def test_v2():
     pre_version = dict_to_bytes({"our_key_setup_version": "v2"})
 
     # submit PAKE-0, should get alleged key, pre-VERSION, VERSION
-    (actions, wanted) = ks.input(side2, "pake", msg2)
+    actions = ks.input(side2, "pake", msg2)
     assert actions[0] == HaveAllegedKey()
     # verify outbound pre-VERSION
     assert actions[1] == Send(side1, "pake-1", pre_version)
@@ -280,7 +276,6 @@ def test_v2():
     assert s.phase == "version"
     outbound_version_bytes = s.body
     assert len(actions) == 3
-    assert wanted == "pake-1"
 
     # verify outbound VERSION
     side1_version_key = derive_phase_key(kcm_key, side1, "version")
@@ -289,9 +284,8 @@ def test_v2():
     assert side1_version == app_versions
 
     # submit inbound pre-VERSION, should not explode
-    (actions, wanted) = ks.input(side2, "pake-1", pre_version)
+    actions = ks.input(side2, "pake-1", pre_version)
     assert actions == []
-    assert wanted == "version"
 
     # build an inbound VERSION
     side2_app_versions = { "rah": "blurg" }
@@ -300,6 +294,5 @@ def test_v2():
     good_inbound_version_bytes = encrypt_data(side2_good_version_key, side2_version_bytes)
 
     # submit the VERSION, and it should verify it
-    (actions, wanted) = ks.input(side2, "version", good_inbound_version_bytes)
+    actions = ks.input(side2, "version", good_inbound_version_bytes)
     assert actions == [Done(main_key, side2_version_bytes)]
-    assert wanted == None

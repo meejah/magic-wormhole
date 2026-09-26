@@ -1,3 +1,4 @@
+import typing
 from attrs import frozen, define
 from zope.interface import implementer
 from automat import TypeMachineBuilder
@@ -10,35 +11,13 @@ from ..errors import CrowdedError, WrongPasswordError, NegotiationError
 from . import ikeysetup
 from .ikeysetup import IKeySetup, NextKeySetupInput, MessageTuple, KeySetupAction
 from .spake2_helper import SPAKE2_Helper
+from ..timing import DebugTiming
 
 # This is the retroactively-named "v0" key-setup protocol: the initial
 # one used by all versions of magic-wormhole, at least through the
 # 0.24.0 release. We implement here as an IKeySetup so that future
 # versions of the client can fall back to it when their peer can't do
 # something better.
-
-# states
-@frozen
-class Init:
-    pass
-@frozen
-class StartedEarly: # waiting for outbound PAKE-0
-    pass
-@frozen
-class WantPAKE: # -> VerifyingOurVersion
-    wanted: str
-@frozen
-class VerifyingKey: # -> Done
-    key: bytes
-@frozen
-class Done:
-    pass
-
-
-
-import typing
-from ..timing import DebugTiming
-
 
 class KeySetup(typing.Protocol):
     def start_pake0(self, code: str, their_side: str | None) -> dict:

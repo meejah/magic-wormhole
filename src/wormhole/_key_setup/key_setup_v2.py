@@ -306,7 +306,6 @@ class KeySetup_V2:
                 raise ValueError("bad state")
         assert isinstance(actions, list)
         assert next_wanted != False
-        print("DINGDING", next_wanted)
         return actions#, next_wanted
 
     def _compute_session_key(self):
