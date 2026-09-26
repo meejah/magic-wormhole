@@ -84,8 +84,9 @@ class Negotiator:
     def __attrs_post_init__(self):
         self._state: State = Waiting()
         self._their_side: str | None = None # set by got_versions
-        self._queued_inbound: dict(str, bytes) = {} # awaiting being wanted
-        self._wanted: str | None = None
+        self._queued_inbound: list(str, bytes) = [] # awaiting being wanted
+        self._last_delivery: None | str = None  # last phase sent to Key Setup
+        self._done_pake: bool = False
         self._next_outbound_phase = "pake"
         self._outputs: list[inegotiator.NegotiatorAction] = []
 
@@ -119,7 +120,6 @@ class Negotiator:
         # SPAKE2, they must share the SPAKE2 instance, so both get the
         # same SPAKE2 first message)
         for ver,ks in panel.items():
-
             pieces = ks.start_pake0(code, None) # we don't know their_side yet
             for key,value in pieces.items():
                 assert isinstance(value, str)
@@ -174,12 +174,18 @@ class Negotiator:
     def _drain_inbound(self):
         assert isinstance(self._state, Negotiating)
         ks = self._state.key_setup
-        while self._state.wanted in self._queued_inbound:
-            assert isinstance(self._state, Negotiating) # Done should clear wanted
-            phase = self._state.wanted
-            body = self._queued_inbound.pop(phase)
+        while self._queued_inbound:
+            if self._last_delivery is None:
+                wanted = "pake"
+            elif self._done_pake:
+                wanted = "version"
+            else:
+                wanted = next_phase(self._last_delivery)
+            if self._queued_inbound[0][0] != wanted:
+                break
+            phase, body = self._queued_inbound.pop(0)
             actions = ks.input(self._their_side, phase, body)
-            wanted = "version"  # this is future-proofing code anyway
+            self._last_delivery = phase
             assert isinstance(actions, list), "need list not {}".format(actions)
             self._process_actions(actions)
             self._state = Negotiating(ks, wanted)
@@ -193,11 +199,12 @@ class Negotiator:
                     self._outputs.append(inegotiator.Send(phase, body))
                 case ikeysetup.HaveAllegedKey():
                     self._outputs.append(inegotiator.HaveAllegedKey())
+                case ikeysetup.WantVersion():
+                    self._done_pake = True
                 case ikeysetup.Done(key, version_data):
                     self._outputs.append(inegotiator.Done(key, version_data))
                 case _:
                     raise ValueError("unknown KeySetupAction") # TODO name it
-
 
     def got_code(self, code: str) -> None:
         match self._state:
@@ -268,8 +275,19 @@ class Negotiator:
         if not self._their_side:
             self._their_side = side
         assert side == self._their_side
-        assert phase not in self._queued_inbound
-        self._queued_inbound[phase] = body
+        for ph, _ in self._queued_inbound:
+            assert phase != ph, "duplicate phase"
+        self._queued_inbound.append((phase, body))
+
+        def phase_order(message):
+            phase, _ = message
+            if phase == "version":
+                return 999;
+            elif phase == "pake":
+                return 0;
+            else:
+                return int(phase.split("-", 2)[1])
+        self._queued_inbound.sort(key=phase_order)
         if isinstance(self._state, Negotiating):
             self._drain_inbound()
         return self._get_actions()

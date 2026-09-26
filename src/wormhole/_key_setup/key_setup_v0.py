@@ -85,6 +85,7 @@ def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any
         return [
             ikeysetup.HaveAllegedKey(),
             ikeysetup.Send(core.side, "version", encrypted),
+            ikeysetup.WantVersion(),
         ]
 
     @want_version.upon(KeySetup.got_version).to(done)
