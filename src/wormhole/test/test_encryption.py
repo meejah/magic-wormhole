@@ -21,8 +21,7 @@ def build_encryption_core(version=None):
     else:
         assert version in KEY_SETUP_VERSIONS
         versions = [ version ]
-        with mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", versions):
-            c = _encryption._EncryptionCore("appid", {}, "side1", timing.DebugTiming())
+        c = _encryption._EncryptionCore("appid", {}, "side1", timing.DebugTiming(), versions)
     return c
 
 def compute_pake0(code):

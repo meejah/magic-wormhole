@@ -9,7 +9,7 @@ from .util import (bytes_to_dict, provides, derive_phase_key,
                    encrypt_data, decrypt_data, CryptoError)
 from .errors import _UnknownPhaseError, WrongPasswordError
 from ._key_setup import inegotiator
-from ._key_setup.negotiator import Negotiator
+from ._key_setup.negotiator import Negotiator, KEY_SETUP_VERSIONS
 
 __all__ = ["Encryption", "_EncryptionCore"]
 # phase classifiers
@@ -97,6 +97,7 @@ class _EncryptionCore:
     _app_versions: dict
     _side: str
     _timing: ITiming = field(validator=provides(ITiming))
+    _versions: list[str] = KEY_SETUP_VERSIONS
 
     _code = None
     _key = None # or verified session key
@@ -109,7 +110,7 @@ class _EncryptionCore:
         self._queued_received_encrypted = []
         self._queued_sends = []
 
-        self._negotiator = Negotiator(self._appid, self._app_versions, self._side, self._timing)
+        self._negotiator = Negotiator(self._appid, self._app_versions, self._side, self._timing, self._versions)
         self._their_side = None
 
     def _add_output(self, ev):

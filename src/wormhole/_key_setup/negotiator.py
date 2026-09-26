@@ -12,19 +12,9 @@ from ..errors import NoCommonVersionError
 
 # This defines all the versions we are capable+willing to speak, in
 # increasing order of preference (so the right-most version is the
-# most preferable). This list will be sampled at construction time, so
-# unit tests can mock.patch the list, to simulate older clients and
-# ensure they can interoperate. Each version here must have an
-# IKeySetup provider in the code below.
-
+# most preferable).
 KEY_SETUP_VERSIONS = ["v0", "v1", "v2"]
 
-# the constructors are sampled too, for unit tests
-KEY_SETUP_CONSTRUCTORS = {
-    "v0": create_keysetup_v0, ##KeySetup_V0,
-    "v1": KeySetup_V1,
-    "v2": KeySetup_V2,
-}
 
 def negotiate(my_side, their_side, my_versions, their_versions):
     assert my_side != their_side
@@ -84,12 +74,14 @@ class Negotiator:
     _app_versions: dict
     _side: str
     _timing: ITiming = field(validator=provides(ITiming))
+    _key_setup_versions: list[str] = KEY_SETUP_VERSIONS
+    _key_setup_constructors: dict = {
+        "v0": create_keysetup_v0, ##KeySetup_V0,
+        "v1": KeySetup_V1,
+        "v2": KeySetup_V2,
+    }
 
     def __attrs_post_init__(self):
-        # sample at startup so tests can modify, copy() probably overkill
-        self._key_setup_versions = KEY_SETUP_VERSIONS.copy()
-        self._key_setup_constructors = KEY_SETUP_CONSTRUCTORS.copy()
-
         self._state: State = Waiting()
         self._their_side: str | None = None # set by got_versions
         self._queued_inbound: dict(str, bytes) = {} # awaiting being wanted

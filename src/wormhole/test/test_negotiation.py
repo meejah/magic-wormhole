@@ -101,9 +101,7 @@ def test_v0_ABCD_basic():
     fv0 = FakeKeySetup()
     ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
-    with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
-          mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
-        n = Negotiator(appid, app_versions, side1, timing)
+    n = Negotiator(appid, app_versions, side1, timing, ["v0"], {"v0": ks0c})
     # merely creating the Negotiator shouldn't create a KeySetup yet
     assert ks0c.call_count == 0
 
@@ -155,9 +153,7 @@ def test_v0_ABDC():
     fv0 = FakeKeySetup()
     ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
-    with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
-          mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
-        n = Negotiator(appid, app_versions, side1, timing)
+    n = Negotiator(appid, app_versions, side1, timing, ["v0"], {"v0": ks0c})
     # merely creating the Negotiator shouldn't create a KeySetup yet
     assert ks0c.call_count == 0
 
@@ -217,9 +213,7 @@ def test_v0_ACBD():
     fv0 = FakeKeySetup()
     ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
-    with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
-          mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
-        n = Negotiator(appid, app_versions, side1, timing)
+    n = Negotiator(appid, app_versions, side1, timing, ["v0"], {"v0": ks0c})
     # merely creating the Negotiator shouldn't create a KeySetup yet
     assert ks0c.call_count == 0
 
@@ -268,9 +262,7 @@ def test_v0_BACD():
     fv0 = FakeKeySetup()
     ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
-    with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
-          mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
-        n = Negotiator(appid, app_versions, side1, timing)
+    n = Negotiator(appid, app_versions, side1, timing, ["v0"], {"v0": ks0c})
     # merely creating the Negotiator shouldn't create a KeySetup yet
     assert ks0c.call_count == 0
 
@@ -319,9 +311,7 @@ def test_v0_BADC():
     fv0 = FakeKeySetup()
     ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
-    with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
-          mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
-        n = Negotiator(appid, app_versions, side1, timing)
+    n = Negotiator(appid, app_versions, side1, timing, ["v0"], {"v0": ks0c})
     # merely creating the Negotiator shouldn't create a KeySetup yet
     assert ks0c.call_count == 0
 
@@ -376,9 +366,7 @@ def test_v0_BCAD():
     fv0 = FakeKeySetup()
     ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
-    with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
-          mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
-        n = Negotiator(appid, app_versions, side1, timing)
+    n = Negotiator(appid, app_versions, side1, timing, ["v0"], {"v0": ks0c})
     # merely creating the Negotiator shouldn't create a KeySetup yet
     assert ks0c.call_count == 0
 
@@ -430,9 +418,7 @@ def test_v0_CBAD():
     fv0 = FakeKeySetup()
     ks0c = mock.create_autospec(create_keysetup_v0)
     ks0c.return_value = fv0
-    with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0"]),
-          mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v0": ks0c})):
-        n = Negotiator(appid, app_versions, side1, timing)
+    n = Negotiator(appid, app_versions, side1, timing, ["v0"], {"v0": ks0c})
     # merely creating the Negotiator shouldn't create a KeySetup yet
     assert ks0c.call_count == 0
 
@@ -485,9 +471,7 @@ def test_v1_basic():
     fv1 = FakeKeySetup()
     ks1c = mock.create_autospec(KeySetup_V1)
     ks1c.return_value = fv1
-    with (mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v1"]),
-          mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_CONSTRUCTORS", {"v1": ks1c})):
-        n = Negotiator(appid, app_versions, side1, timing)
+    n = Negotiator(appid, app_versions, side1, timing, ["v1"], {"v1": ks1c})
     # merely creating the Negotiator shouldn't create a KeySetup yet
     assert ks1c.call_count == 0
 

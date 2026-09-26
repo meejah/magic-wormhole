@@ -6,7 +6,7 @@ from .. import wormhole
 from ..errors import NoCommonVersionError, WrongPasswordError
 from ..util import bytes_to_dict, dict_to_bytes
 from .._mailbox import Mailbox
-from .._key_setup.negotiator import KEY_SETUP_VERSIONS, KEY_SETUP_CONSTRUCTORS
+from .._key_setup.negotiator import KEY_SETUP_VERSIONS
 
 
 # Any client which accepts the v0 protocol is vulnerable to a
@@ -73,7 +73,7 @@ def do_v0():
 
 # these tests only work if we can do v0: if we remove that code,
 # remove these tests
-assert "v0" in KEY_SETUP_CONSTRUCTORS
+assert "v0" in KEY_SETUP_VERSIONS
 
 @ensureDeferred
 async def test_v0_good(reactor, mailbox):
@@ -90,8 +90,8 @@ async def test_v0_good(reactor, mailbox):
 
 # these tests only work if we can do both v0 and v1: if we remove
 # either, change these tests
-assert "v0" in KEY_SETUP_CONSTRUCTORS
-assert "v1" in KEY_SETUP_CONSTRUCTORS
+assert "v0" in KEY_SETUP_VERSIONS
+assert "v1" in KEY_SETUP_VERSIONS
 
 def do_v0v1():
     return mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0", "v1"])
