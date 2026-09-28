@@ -40,6 +40,7 @@ class Boss:
     _tor = attrib(validator=optional(provides(_interfaces.ITorManager)))
     _timing = attrib(validator=provides(_interfaces.ITiming))
     _on_status_update = attrib(default=None)  # type should be Callable[[WormholeStatus], None]
+    _key_setup_versions = attrib(default=None)  # type should be list[str]
     m = MethodicalMachine()
     set_trace = getattr(m, "_setTrace",
                         lambda self, f: None)  # pragma: no cover
@@ -56,10 +57,15 @@ class Boss:
         if self._on_status_update is not None:
             self._on_status_update(self._current_wormhole_status)
 
+        # do we want to ensure that anything in
+        # self._key_setup_versions is also in KEY_SETUP_VERSIONS or
+        # does that limit people playing with new, as-yet-unknown
+        # versions?
+
     def _build_workers(self):
         self._N = Nameplate(self._evolve_wormhole_status)
         self._M = Mailbox(self._side)
-        self._E = Encryption(self._appid, self._versions, self._side, self._timing)
+        self._E = Encryption(self._appid, self._versions, self._side, self._timing, self._key_setup_versions)
         self._RC = RendezvousConnector(self._url, self._appid, self._side,
                                        self._reactor, self._journal, self._tor,
                                        self._timing, self._client_version, self._evolve_wormhole_status)

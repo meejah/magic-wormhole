@@ -252,7 +252,10 @@ class _DeferredWormhole:
         self._version_observer.error(f)
         self._received_observer.fire(f)
 
-
+# this could really use a docstring
+# enabled_versions: restricts what protocol versions we'll speak if
+#     specified. This is for experts only (used by the tests, for example).
+#     The default list is in wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS
 def create(
         appid,
         relay_url,
@@ -265,7 +268,8 @@ def create(
         stderr=sys.stderr,
         dilation=None,
         _eventual_queue=None,
-        on_status_update=None):
+        on_status_update=None,
+        _enabled_versions=None):
     timing = timing or DebugTiming()
     side = bytes_to_hexstr(os.urandom(5))
     journal = journal or ImmediateJournal()
@@ -292,7 +296,8 @@ def create(
         v = v.decode("utf-8", errors="replace")
     client_version = ("python", v)
     b = Boss(w, side, relay_url, appid, wormhole_versions, client_version,
-             reactor, eq, cooperator, journal, tor, timing, on_status_update)
+             reactor, eq, cooperator, journal, tor, timing, on_status_update,
+             _enabled_versions)
     w._set_boss(b)
     b.start()
     return w

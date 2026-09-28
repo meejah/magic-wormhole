@@ -38,13 +38,13 @@ def corrupt(remove=[], remove_all=False):
     return mock.patch("wormhole._mailbox.Mailbox.rx_message", new_rx_message)
 
 
-async def make_connection(reactor, mailbox, status):
+async def make_connection(reactor, mailbox, status, enabled_versions=None):
     def on_status_update1(s):
         status[0] = s
     def on_status_update2(s):
         status[1] = s
-    w1 = wormhole.create(APPID, mailbox.url, reactor, on_status_update=on_status_update1)
-    w2 = wormhole.create(APPID, mailbox.url, reactor, on_status_update=on_status_update2)
+    w1 = wormhole.create(APPID, mailbox.url, reactor, on_status_update=on_status_update1, _enabled_versions=enabled_versions)
+    w2 = wormhole.create(APPID, mailbox.url, reactor, on_status_update=on_status_update2, _enabled_versions=enabled_versions)
 
     w1.allocate_code()
     code = await w1.get_code()
@@ -80,7 +80,7 @@ async def test_v0_good(reactor, mailbox):
 
     status = [None, None]
     with do_v0():
-        await make_connection(reactor, mailbox, status)
+        await make_connection(reactor, mailbox, status, ["v0"])
     assert status[0].key_setup_version == "v0"
     assert status[1].key_setup_version == "v0"
 
@@ -93,25 +93,20 @@ async def test_v0_good(reactor, mailbox):
 assert "v0" in KEY_SETUP_VERSIONS
 assert "v1" in KEY_SETUP_VERSIONS
 
-def do_v0v1():
-    return mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v0", "v1"])
-def do_v1():
-    return mock.patch("wormhole._key_setup.negotiator.KEY_SETUP_VERSIONS", ["v1"])
-
 @ensureDeferred
 async def test_v0v1_remove_v1_vulnerable(reactor, mailbox):
     status = [None, None]
-    with (do_v0v1(), corrupt(remove=["v1"])):
-        await make_connection(reactor, mailbox, status)
+    with corrupt(remove=["v1"]):
+        await make_connection(reactor, mailbox, status, ["v0", "v1"])
     assert status[0].key_setup_version == "v0"
     assert status[1].key_setup_version == "v0"
 
 @ensureDeferred
 async def test_v1_remove_v1_no_common(reactor, mailbox, observe_errors):
     status = [None, None]
-    with (do_v1(), corrupt(remove_all=True)):
+    with corrupt(remove_all=True):
         with pytest.raises(NoCommonVersionError) as err:
-            await make_connection(reactor, mailbox, status)
+            await make_connection(reactor, mailbox, status, ["v1"])
         assert err.value.my_versions == ["v1"]
         assert err.value.their_versions == ["v0"] # legacy
     assert status[0].key_setup_version == None
@@ -132,9 +127,9 @@ def do_v1v2():
 @ensureDeferred
 async def test_v0v1v2_remove_v2_caught(reactor, mailbox):
     status = [None, None]
-    with (do_v0v1v2(), corrupt(remove=["v2"])):
+    with corrupt(remove=["v2"]):
         with pytest.raises(WrongPasswordError):
-            await make_connection(reactor, mailbox, status)
+            await make_connection(reactor, mailbox, status, ["v0", "v1", "v2"])
     assert status[0].key_setup_version == "v1"
     assert status[1].key_setup_version == "v1"
 
@@ -144,8 +139,8 @@ async def test_v0v1v2_remove_v2_caught(reactor, mailbox):
 @ensureDeferred
 async def test_v0v1v2_remove_v1v2_vulnerable(reactor, mailbox):
     status = [None, None]
-    with (do_v0v1v2(), corrupt(remove_all=True)):
-        await make_connection(reactor, mailbox, status)
+    with corrupt(remove_all=True):
+        await make_connection(reactor, mailbox, status, ["v0", "v1", "v2"])
     assert status[0].key_setup_version == "v0"
     assert status[1].key_setup_version == "v0"
 
@@ -156,9 +151,9 @@ async def test_v0v1v2_remove_v1v2_vulnerable(reactor, mailbox):
 @ensureDeferred
 async def test_v1v2_remove_v2_caught(reactor, mailbox):
     status = [None, None]
-    with (do_v1v2(), corrupt(remove=["v2"])):
+    with corrupt(remove=["v2"]):
         with pytest.raises(WrongPasswordError) as err:
-            await make_connection(reactor, mailbox, status)
+            await make_connection(reactor, mailbox, status, ["v1", "v2"])
         print()
         print("---HERE")
         print(err)
@@ -170,9 +165,9 @@ async def test_v1v2_remove_v2_caught(reactor, mailbox):
 @ensureDeferred
 async def test_v1v2_remove_v1v2_no_common(reactor, mailbox, observe_errors):
     status = [None, None]
-    with (do_v1v2(), corrupt(remove_all=True)):
+    with corrupt(remove_all=True):
         with pytest.raises(NoCommonVersionError) as err:
-            await make_connection(reactor, mailbox, status)
+            await make_connection(reactor, mailbox, status, ["v1", "v2"])
         #print(err)
         assert err.value.my_versions == ["v1", "v2"]
         assert err.value.their_versions == ["v0"]

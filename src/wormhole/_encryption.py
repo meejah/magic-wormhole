@@ -97,7 +97,7 @@ class _EncryptionCore:
     _app_versions: dict
     _side: str
     _timing: ITiming = field(validator=provides(ITiming))
-    _versions: list[str] = KEY_SETUP_VERSIONS
+    _key_setup_versions: list[str] = None
 
     _code = None
     _key = None # or verified session key
@@ -109,8 +109,10 @@ class _EncryptionCore:
         # these queues are held until we have a verified key
         self._queued_received_encrypted = []
         self._queued_sends = []
+        if self._key_setup_versions is None:
+            self._key_setup_versions = KEY_SETUP_VERSIONS
 
-        self._negotiator = Negotiator(self._appid, self._app_versions, self._side, self._timing, self._versions)
+        self._negotiator = Negotiator(self._appid, self._app_versions, self._side, self._timing, self._key_setup_versions)
         self._their_side = None
 
     def _add_output(self, ev):
@@ -250,8 +252,10 @@ class _EncryptionCore:
 
 @implementer(IEncryption)
 class Encryption:
-    def __init__(self, appid, versions, side, timing):
-        self._core = _EncryptionCore(appid, versions, side, timing)
+    def __init__(self, appid, versions, side, timing, key_setup_versions=None):
+        if key_setup_versions is None:
+            key_setup_versions = KEY_SETUP_VERSIONS
+        self._core = _EncryptionCore(appid, versions, side, timing, key_setup_versions)
         self._test_count_received_messages = 0
 
     def wire(self, boss, mailbox):
