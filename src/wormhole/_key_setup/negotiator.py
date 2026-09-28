@@ -185,10 +185,13 @@ class Negotiator:
                 break
             phase, body = self._queued_inbound.pop(0)
             actions = ks.input(self._their_side, phase, body)
-            self._last_delivery = phase
             assert isinstance(actions, list), "need list not {}".format(actions)
             self._process_actions(actions)
+            # _process_actions could have toggled self._done_pake
+            if self._done_pake:
+                wanted = "version"
             self._state = Negotiating(ks, wanted)
+            self._last_delivery = phase
 
     def _process_actions(self, actions):
         for action in actions:

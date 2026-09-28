@@ -280,7 +280,7 @@ class KeySetup_V2:
                                (self.VERSION, their_version))
                         self._error = WrongPasswordError(msg)
                         raise self._error
-                    actions = []
+                    actions = [ikeysetup.WantVersion()]
                     next_wanted = "version"
                     self._state = VerifyingKey(kcm_key, main_key)
                     #print(" verified our_key_setup_version, next phase", next_wanted)

@@ -10,7 +10,7 @@ from .._key_setup.hash_transcript import hash_transcript
 from .._key_setup.key_setup_v0 import create_keysetup_v0
 from .._key_setup.key_setup_v1 import KeySetup_V1
 from .._key_setup.key_setup_v2 import KeySetup_V2
-from .._key_setup.ikeysetup import (Send, HaveAllegedKey, Done)
+from .._key_setup.ikeysetup import (Send, HaveAllegedKey, Done, WantVersion)
 from ..util import (bytes_to_hexstr, hexstr_to_bytes,
                     bytes_to_dict, dict_to_bytes,
                     to_bytes)
@@ -87,7 +87,7 @@ def _test_v0(side_known_early, version_is_good):
     assert s.side == side1
     assert s.phase == "version"
     outbound_version_bytes = s.body
-    assert actions == []
+    assert actions == [WantVersion()]
 
     # verify outbound VERSION
     side1_version_key = derive_phase_key(key, side1, "version")
@@ -195,7 +195,7 @@ def _test_v1(side_known_early, version_is_good):
 
     # C: submit the pre-version, should not explode
     actions = ks.input(side2, "pake-1", pre_version)
-    assert actions == []
+    assert actions == [WantVersion()]
 
     # d: submit the VERSION, and it should verify it
     if version_is_good:
@@ -284,7 +284,7 @@ def test_v2():
 
     # submit inbound pre-VERSION, should not explode
     actions = ks.input(side2, "pake-1", pre_version)
-    assert actions == []
+    assert actions == [WantVersion()]
 
     # build an inbound VERSION
     side2_app_versions = { "rah": "blurg" }

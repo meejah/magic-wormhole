@@ -151,7 +151,7 @@ class KeySetup_V1:
                                (self.VERSION, their_version))
                         self._error = WrongPasswordError(msg)
                         raise self._error
-                    actions = []
+                    actions = [ikeysetup.WantVersion()]
                     next_wanted = "version"
                     self._state = VerifyingKey(key)
                 else:
