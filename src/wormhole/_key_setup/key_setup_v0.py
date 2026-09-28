@@ -54,7 +54,7 @@ class KeySetupState:
             self.spake2_helper = SPAKE2_Helper(self.appid)
 
 
-def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any], timing, spake2_helper=None):
+def _create_builder_v0():
     # could create a KeySetup_V0 instead .. ideally map APIs exactly
     builder = TypeMachineBuilder(KeySetup, KeySetupState)
     init = builder.state("init")
@@ -147,9 +147,17 @@ def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any
         """
         return "pake"
 
-    machine_factory = builder.build()
+    return builder.build()
+
+
+# we need an instance of the builder at 'the top level' so
+# "automat-visualize" can find it.
+KeySetupV0 = _create_builder_v0()
+
+
+def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any], timing, spake2_helper=None):
     state = KeySetupState(side, appid, app_versions, timing, spake2_helper)
-    machine = machine_factory(state)
+    machine = key_setup_v0(state)
 
     # hack to keep the same API; this can go away if we bump the
     # "parse_message" logic up to negotiator
