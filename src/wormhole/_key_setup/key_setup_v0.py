@@ -98,6 +98,36 @@ def _create_builder_v0():
             raise core._error
         return [ikeysetup.Done(core.key, plaintext)]
 
+    @init.upon(KeySetup.start_pake0).to(started_early)
+    def start_pake0(inputs: KeySetup, core: KeySetupState, code: str, their_side: str) -> dict:
+        if core.their_side is not None and core.their_side != their_side:
+            # TODO: maybe an Error(..) output instead?
+            raise CrowdedError()
+        core.their_side = their_side
+        msg1 = core.spake2_helper.start(code)
+        # TODO: instead maybe a list of outputs [PakeAttributes({"pake_v1": ...})]
+        return {"pake_v1": bytes_to_hexstr(msg1)}
+
+    @started_early.upon(KeySetup.submit_outbound_pake0).to(want_pake)
+    def _(side, phase, body):
+        """
+        v0 doesn't use a transcript so we don't actually look at the
+        message at all
+        """
+        return "pake"
+
+    return builder.build()
+
+
+# we need an instance of the builder at 'the top level' so
+# "automat-visualize" can find it.
+KeySetupV0 = _create_builder_v0()
+
+
+def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any], timing, spake2_helper=None):
+    state = KeySetupState(side, appid, app_versions, timing, spake2_helper)
+    machine = KeySetupV0(state)
+
     # bump this out of here it's not really "state-machine" stuff
     def parse_message(side: str, phase: str, body: bytes) -> list[KeySetupAction]:
         """
@@ -128,36 +158,6 @@ def _create_builder_v0():
         elif phase == "version":
             return machine.got_version(body)
         raise RuntimeError("illegal phase '{}' during key setup".format(phase))
-
-    @init.upon(KeySetup.start_pake0).to(started_early)
-    def start_pake0(inputs: KeySetup, core: KeySetupState, code: str, their_side: str) -> dict:
-        if core.their_side is not None and core.their_side != their_side:
-            # TODO: maybe an Error(..) output instead?
-            raise CrowdedError()
-        core.their_side = their_side
-        msg1 = core.spake2_helper.start(code)
-        # TODO: instead maybe a list of outputs [PakeAttributes({"pake_v1": ...})]
-        return {"pake_v1": bytes_to_hexstr(msg1)}
-
-    @started_early.upon(KeySetup.submit_outbound_pake0).to(want_pake)
-    def _(side, phase, body):
-        """
-        v0 doesn't use a transcript so we don't actually look at the
-        message at all
-        """
-        return "pake"
-
-    return builder.build()
-
-
-# we need an instance of the builder at 'the top level' so
-# "automat-visualize" can find it.
-KeySetupV0 = _create_builder_v0()
-
-
-def create_keysetup_v0(side: str, appid: str, app_versions: dict[str, typing.Any], timing, spake2_helper=None):
-    state = KeySetupState(side, appid, app_versions, timing, spake2_helper)
-    machine = key_setup_v0(state)
 
     # hack to keep the same API; this can go away if we bump the
     # "parse_message" logic up to negotiator
