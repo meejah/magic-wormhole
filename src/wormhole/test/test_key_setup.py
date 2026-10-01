@@ -84,7 +84,6 @@ def _test_v0(side_known_early, version_is_good):
     assert actions.pop(0) == HaveAllegedKey()
     s = actions.pop(0)
     assert isinstance(s, Send)
-    assert s.side == side1
     assert s.phase == "version"
     outbound_version_bytes = s.body
     assert actions == [WantVersion()]
@@ -163,11 +162,10 @@ def _test_v1(side_known_early, version_is_good):
     # B: feed it a PAKE, it should get an alleged key and transmit a pre-VERSION
     actions = ks.input(side2, "pake", msg2)
     assert actions.pop(0) == HaveAllegedKey()
-    assert actions.pop(0) == Send(side1, "pake-1", pre_version)
+    assert actions.pop(0) == Send("pake-1", pre_version)
     # the pre-version does not go into the transcript, nor does VERSION
     s = actions.pop(0)
     assert isinstance(s, Send)
-    assert s.side == side1
     assert s.phase == "version"
     outbound_version_bytes = s.body
     assert actions == []
@@ -267,11 +265,10 @@ def test_v2():
     actions = ks.input(side2, "pake", msg2)
     assert actions[0] == HaveAllegedKey()
     # verify outbound pre-VERSION
-    assert actions[1] == Send(side1, "pake-1", pre_version)
+    assert actions[1] == Send("pake-1", pre_version)
     # the pre-version does not go into the transcript, nor does VERSION
     s = actions[2]
     assert isinstance(s, Send)
-    assert s.side == side1
     assert s.phase == "version"
     outbound_version_bytes = s.body
     assert len(actions) == 3

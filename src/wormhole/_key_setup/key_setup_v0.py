@@ -84,7 +84,7 @@ def _create_builder_v0():
 
         return [
             ikeysetup.HaveAllegedKey(),
-            ikeysetup.Send(core.side, "version", encrypted),
+            ikeysetup.Send("version", encrypted),
             ikeysetup.WantVersion(),
         ]
 

@@ -6,7 +6,6 @@ from zope.interface import Interface
 # Send means a key-setup message needs to be sent to the peer
 @frozen
 class Send:
-    side: str
     phase: str
     body: bytes
 

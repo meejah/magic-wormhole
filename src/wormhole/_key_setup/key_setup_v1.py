@@ -93,7 +93,7 @@ class KeySetup_V1:
         msg1 = self._sph.start(code)
         components = {"pake_v1": bytes_to_hexstr(msg1)}
         body = dict_to_bytes(components)
-        send = ikeysetup.Send(self._side, "pake-1", body)
+        send = ikeysetup.Send("pake-1", body)
         self._next_outbound_phase = "pake-2" # for pre-version
         wanted = "pake"
         self._state = WantPAKE(wanted)
@@ -188,10 +188,10 @@ class KeySetup_V1:
         preversion_body = dict_to_bytes(preversion)
         phase = self._next_outbound_phase
         self._next_outbound_phase = next_phase(phase)
-        return ikeysetup.Send(self._side, phase, preversion_body)
+        return ikeysetup.Send(phase, preversion_body)
 
     def _send_version(self, key):
         data_key = derive_phase_key(key, self._side, "version")
         plaintext = dict_to_bytes(self._app_versions)
         encrypted = encrypt_data(data_key, plaintext)
-        return ikeysetup.Send(self._side, "version", encrypted)
+        return ikeysetup.Send("version", encrypted)

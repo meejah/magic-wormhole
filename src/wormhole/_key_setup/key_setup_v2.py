@@ -175,7 +175,7 @@ class KeySetup_V2:
 
         #print(" outbound pake1 has", list(components))
         body = dict_to_bytes(components)
-        send = ikeysetup.Send(self._side, "pake-1", body)
+        send = ikeysetup.Send("pake-1", body)
         self._next_outbound_phase = "pake-2"
         wanted = "pake"
         self._state = WantPAKE(wanted)
@@ -237,7 +237,7 @@ class KeySetup_V2:
                     ct_body = dict_to_bytes(ct_msg)
                     outbound_phase = self._next_outbound_phase
                     self._next_outbound_phase = next_phase(outbound_phase)
-                    actions.append(ikeysetup.Send(self._side, outbound_phase, ct_body))
+                    actions.append(ikeysetup.Send(outbound_phase, ct_body))
                     self._transcript.append((self._side, outbound_phase, ct_body))
                 if self._want_mlkem_ct and "v2_mlkem_ciphertext" in payload:
                     assert self._role == Leader()
@@ -328,10 +328,10 @@ class KeySetup_V2:
         preversion_body = dict_to_bytes(preversion)
         phase = self._next_outbound_phase
         self._next_outbound_phase = next_phase(phase)
-        return ikeysetup.Send(self._side, phase, preversion_body)
+        return ikeysetup.Send(phase, preversion_body)
 
     def _send_version(self, kcm_key):
         data_key = derive_phase_key(kcm_key, self._side, "version")
         plaintext = dict_to_bytes(self._app_versions)
         encrypted = encrypt_data(data_key, plaintext)
-        return ikeysetup.Send(self._side, "version", encrypted)
+        return ikeysetup.Send("version", encrypted)

@@ -134,7 +134,7 @@ def test_v0_ABCD_basic():
 
     # but receiving the inbound PAKE-0 body will build the alleged key,
     # emit VERSION, and wait for VERSION
-    fv0.t_expect("input", [ikeysetup.HaveAllegedKey(), ikeysetup.Send(side1, "version", b"vbytes"), ikeysetup.WantVersion()])
+    fv0.t_expect("input", [ikeysetup.HaveAllegedKey(), ikeysetup.Send("version", b"vbytes"), ikeysetup.WantVersion()])
     pake0b = dict_to_bytes({"pake_v1": "stuff2"})
     actions = n.got_key_setup_message(side2, "pake", pake0b) # C2
     assert fv0.t_all_called() == [("input", side2, "pake", pake0b)]
@@ -197,7 +197,7 @@ def test_v0_ABDC():
     # arrives, it will be sent to key_setup right away. That will
     # build the alleged key and emits VERSION.
     fv0.t_expect("input", [ikeysetup.HaveAllegedKey(),
-                           ikeysetup.Send(side1, "version", b"vbytes"),
+                           ikeysetup.Send("version", b"vbytes"),
                            ikeysetup.WantVersion()])
     # then it gets the previously queued inbound VERSION, which
     # finishes everything
@@ -239,7 +239,7 @@ def test_v0_ACBD():
     assert actions == []
 
     # and the PAKE-0 body will trigger an alleged key and emit VERSION
-    fv0.t_expect("input", [ikeysetup.HaveAllegedKey(), ikeysetup.Send(side1, "version", b"vbytes"), ikeysetup.WantVersion()])
+    fv0.t_expect("input", [ikeysetup.HaveAllegedKey(), ikeysetup.Send("version", b"vbytes"), ikeysetup.WantVersion()])
     pake0b = dict_to_bytes({"pake_v1": "stuff2"})
     actions = n.got_key_setup_message(side2, "pake", pake0b) # C2
     assert fv0.t_all_called() == [("input", side2, "pake", pake0b)]
@@ -293,7 +293,7 @@ def test_v0_BACD():
 
     # but receiving the inbound PAKE-0 body will build the alleged key,
     # emit VERSION, and wait for VERSION
-    fv0.t_expect("input", [ikeysetup.HaveAllegedKey(), ikeysetup.Send(side1, "version", b"vbytes"), ikeysetup.WantVersion()])
+    fv0.t_expect("input", [ikeysetup.HaveAllegedKey(), ikeysetup.Send("version", b"vbytes"), ikeysetup.WantVersion()])
     pake0b = dict_to_bytes({"pake_v1": "stuff2"})
     actions = n.got_key_setup_message(side2, "pake", pake0b) # C2
     assert fv0.t_all_called() == [("input", side2, "pake", pake0b)]
@@ -351,7 +351,7 @@ def test_v0_BADC():
     # arrives, it will be sent to key_setup right away. That will
     # build the alleged key and emits VERSION.
     fv0.t_expect("input", [ikeysetup.HaveAllegedKey(),
-                           ikeysetup.Send(side1, "version", b"vbytes"),
+                           ikeysetup.Send("version", b"vbytes"),
                            ikeysetup.WantVersion()])
     # then it gets the previously queued inbound VERSION, which
     # finishes everything
@@ -397,7 +397,7 @@ def test_v0_BCAD():
     # queued inbound PAKE-0 to get the alleged key and send VERSION
     fv0.t_expect("start_pake0", {"pake_v1": "stuff"})
     fv0.t_expect("submit_outbound_pake0", "pake")
-    fv0.t_expect("input", [ikeysetup.HaveAllegedKey(), ikeysetup.Send(side1, "version", b"vbytes"), ikeysetup.WantVersion()])
+    fv0.t_expect("input", [ikeysetup.HaveAllegedKey(), ikeysetup.Send("version", b"vbytes"), ikeysetup.WantVersion()])
     exp_pake0 = {"pake_v1": "stuff", "my_key_setup_versions": ["v0"]}
     p0 = (side1, "pake", dict_to_bytes(exp_pake0))
     actions = n.got_code(code) # A
@@ -449,7 +449,7 @@ def test_v0_CBAD():
     # queued inbound PAKE-0 to get the alleged key and send VERSION
     fv0.t_expect("start_pake0", {"pake_v1": "stuff"})
     fv0.t_expect("submit_outbound_pake0", "pake")
-    fv0.t_expect("input", [ikeysetup.HaveAllegedKey(), ikeysetup.Send(side1, "version", b"vbytes"), ikeysetup.WantVersion()])
+    fv0.t_expect("input", [ikeysetup.HaveAllegedKey(), ikeysetup.Send("version", b"vbytes"), ikeysetup.WantVersion()])
     exp_pake0 = {"pake_v1": "stuff", "my_key_setup_versions": ["v0"]}
     p0 = (side1, "pake", dict_to_bytes(exp_pake0))
     actions = n.got_code(code) # A
@@ -506,7 +506,7 @@ def test_v1_basic():
 
     # but receiving the inbound PAKE-0 body will build the alleged key,
     # emit VERSION, and wait for VERSION
-    fv1.t_expect("input", [ikeysetup.HaveAllegedKey(), ikeysetup.Send(side1, "version", b"vbytes"), ikeysetup.WantVersion()])
+    fv1.t_expect("input", [ikeysetup.HaveAllegedKey(), ikeysetup.Send("version", b"vbytes"), ikeysetup.WantVersion()])
     pake0b = dict_to_bytes({"pake_v1": "stuff2"})
     actions = n.got_key_setup_message(side2, "pake", pake0b) # C2
     assert fv1.t_all_called() == [("input", side2, "pake", pake0b)]

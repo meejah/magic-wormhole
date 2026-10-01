@@ -2,20 +2,26 @@ from zope.interface import Interface
 from attrs import frozen
 
 # actions
-@frozen
-class Send:
-    phase: str
-    body: bytes
+
+from .ikeysetup import Send
+#@frozen
+#class Send:
+#    phase: str
+#    body: bytes
 @frozen
 class DecidedKeySetupVersion:
     version: str
-@frozen
-class HaveAllegedKey:
-    pass
-@frozen
-class Done:
-    key: bytes
-    version_data: bytes
+
+from .ikeysetup import HaveAllegedKey
+#@frozen
+#class HaveAllegedKey:
+#    pass
+
+from .ikeysetup import Done
+#@frozen
+#class Done:
+#    key: bytes
+#    version_data: bytes
 NegotiatorAction = Send | DecidedKeySetupVersion | HaveAllegedKey | Done
 
 

@@ -196,9 +196,8 @@ class Negotiator:
     def _process_actions(self, actions):
         for action in actions:
             match action:
-                case ikeysetup.Send(side, phase, body):
+                case ikeysetup.Send(phase, body):
                     # TODO maybe assert any PAKE-N is sequential, then VERSION just once
-                    assert side == self._side
                     self._outputs.append(inegotiator.Send(phase, body))
                 case ikeysetup.HaveAllegedKey():
                     self._outputs.append(inegotiator.HaveAllegedKey())
